@@ -72,7 +72,14 @@ export class MotorGerente {
                 mensagem: "Mesa Liberada e sem clientes na fila!"
             }
         }})
-    }  
+    }
+    
+    async cancelarReserva(telefone){
+        return await this.#trava.executarComExclusividade(async() => {
+            const clienteRemovido = this.#filaDeEspera.remover(telefone)
+            return clienteRemovido
+        })
+    }
 }
 
 
