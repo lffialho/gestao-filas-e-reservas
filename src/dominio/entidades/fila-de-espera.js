@@ -15,6 +15,17 @@ export class FilaDeEspera{
         return novoCadastro
     }
 
+    remover(telefone){
+        const index = this.#clientes.findIndex((cliente) => cliente.telefone === telefone)
+
+        if (index !== -1){
+            const clienteRemovido = this.#clientes.splice(index, 1)[0]
+            return clienteRemovido
+        }else{
+            return null
+        }
+    }
+
     proximo(){
         return this.#clientes.shift()
     }
@@ -37,4 +48,5 @@ export class FilaDeEspera{
     estaVazia(){
         return this.#clientes.length === 0
     }
+
 }
