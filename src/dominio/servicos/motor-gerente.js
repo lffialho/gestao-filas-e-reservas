@@ -75,7 +75,7 @@ export class MotorGerente {
     }
     
     async cancelarReserva(telefone){
-        return await this.#trava.executarComExclusividade(async() => {
+        return await this.#trava.executarComExclusividade("fila", async() => {
             const clienteRemovido = this.#filaDeEspera.remover(telefone)
             return clienteRemovido
         })

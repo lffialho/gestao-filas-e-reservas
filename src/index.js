@@ -22,11 +22,14 @@ async function solicitarReserva(mesaId, cliente, tamanhoGrupo, telefone) {
 }
 
 async function rodarTeste() {
-    await solicitarReserva("m2", "Ana", 2, "3848")
-    await solicitarReserva("m2", "Bruno", 2, "3848")
-    await solicitarReserva("m2", "Carlos", 5, "3848")
-    const res = await motor.liberaMesa("m2")
-    console.log(res)
+    await solicitarReserva("m2", "Ana", 2, "1111")
+    await solicitarReserva("m2", "Fernando", 2, "2222")
+    await solicitarReserva("m2", "Ana Laura", 2, "3333")
+    await solicitarReserva("m2", "Ana Luiza", 2, "4444")
+    await solicitarReserva("m2", "Bruno", 2, "5555")
+    await solicitarReserva("m2", "Carlos", 5, "6666")
+    const reservaCancelada = await motor.cancelarReserva("3333")
+    console.log(reservaCancelada)
     console.log(motor.tamanhoFilaEspera)
 }
 
