@@ -43,6 +43,18 @@ export class MotorGerente {
         return Math.round((ocupadas / this.#mesas.size) * 100)
     }
 
+    get gerarRelatorio(){
+        return{
+            taxaOcupacao: `${this.taxaDeOcupacao}%`,
+            tempoMedio: this.tempoMedioEspera,
+            tamanhoFila: this.#filaDeEspera.tamanhoDaFila,
+            mesas: Array.from(this.#mesas.values()).map((mesa) => ({
+                numero: mesa.numero,
+                status: mesa.status
+            }))
+        }
+    }
+
     async fazerReserva(mesaId, cliente, tamanhoGrupo){
         const mesa = this.buscarMesa(mesaId)
         if (!mesa){
