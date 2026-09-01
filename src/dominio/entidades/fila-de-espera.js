@@ -3,6 +3,7 @@ export class FilaDeEspera{
     #historicoAtendimentos
     constructor(){
         this.#clientes = []
+        this.#historicoAtendimentos = []
     }
     
     adicionar(cliente, tamanhoGrupo, telefone){

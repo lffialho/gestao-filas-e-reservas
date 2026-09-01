@@ -33,6 +33,16 @@ export class MotorGerente {
         return this.#filaDeEspera.tempoMedioDeEsperaEmSegundos
     }
 
+    get taxaDeOcupacao(){
+        if (this.#mesas.size === 0){
+            return 0
+        }
+        const listaDeMesas = Array.from(this.#mesas.values())
+        const ocupadas = listaDeMesas.filter((mesa) => mesa.status === 'RESERVADA').length
+
+        return Math.round((ocupadas / this.#mesas.size) * 100)
+    }
+
     async fazerReserva(mesaId, cliente, tamanhoGrupo){
         const mesa = this.buscarMesa(mesaId)
         if (!mesa){
