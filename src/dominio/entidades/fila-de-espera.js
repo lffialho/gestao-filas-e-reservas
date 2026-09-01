@@ -1,5 +1,6 @@
 export class FilaDeEspera{
     #clientes
+    #historicoAtendimentos
     constructor(){
         this.#clientes = []
     }
@@ -35,10 +36,25 @@ export class FilaDeEspera{
         
         if (index !== -1){
             const clienteRemovido = this.#clientes.splice(index, 1)[0]
+
+            clienteRemovido.dataAtendimento = new Date()
+
+            const tempoEsperaEmSegundos = Math.floor(clienteRemovido.dataAtendimento - clienteRemovido.dataEntrada) / 1000
+
+            this.#historicoAtendimentos.push(tempoEsperaEmSegundos)
+
             return clienteRemovido
         }else{
             return null
         }
+    }
+
+    get tempoMedioDeEsperaEmSegundos(){
+        if(this.#historicoAtendimentos.length === 0){
+            return 0
+        }
+        const soma = this.#historicoAtendimentos.reduce((total, tempo) => total + tempo, 0)
+        return Math.round(soma / this.#historicoAtendimentos.length)
     }
 
     get tamanhoDaFila(){

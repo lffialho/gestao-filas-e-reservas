@@ -29,6 +29,10 @@ export class MotorGerente {
         return this.#filaDeEspera.tamanhoDaFila
     }
 
+    get tempoMedioEspera(){
+        return this.#filaDeEspera.tempoMedioDeEsperaEmSegundos
+    }
+
     async fazerReserva(mesaId, cliente, tamanhoGrupo){
         const mesa = this.buscarMesa(mesaId)
         if (!mesa){
