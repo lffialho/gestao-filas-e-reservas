@@ -95,6 +95,37 @@ export class ClienteJaNaFila extends ErroDeDominio {
     }
 }
 
+/**
+ * O atendimento é por ordem de chegada: uma mesa livre não pode ir para quem
+ * acabou de chegar se alguém que já esperava também caberia nela.
+ */
+export class FilaTemPrioridade extends ErroDeDominio {
+    readonly mesaId: string;
+    readonly clienteNaFila: string;
+
+    constructor(mesaId: string, clienteNaFila: string) {
+        super(
+            `Mesa "${mesaId}" não pode ser entregue agora: ${clienteNaFila} está na fila desde antes e cabe nesta mesa.`
+        );
+        this.mesaId = mesaId;
+        this.clienteNaFila = clienteNaFila;
+    }
+}
+
+/** Grupo maior que a maior mesa do salão — esperar na fila não resolveria. */
+export class GrupoSemMesaPossivel extends ErroDeDominio {
+    readonly tamanhoGrupo: number;
+    readonly maiorCapacidade: number;
+
+    constructor(tamanhoGrupo: number, maiorCapacidade: number) {
+        super(
+            `Nenhuma mesa do salão acomoda ${tamanhoGrupo} pessoas (a maior tem ${maiorCapacidade} lugares).`
+        );
+        this.tamanhoGrupo = tamanhoGrupo;
+        this.maiorCapacidade = maiorCapacidade;
+    }
+}
+
 export class ItemForaDaFila extends ErroDeDominio {
     constructor() {
         super("Este item não está mais na fila de espera.");

@@ -3,10 +3,20 @@ import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogi
 import { Mesa, StatusMesa } from "../entidades/mesa.js";
 import { FilaDeEspera, type ItemFila } from "../entidades/fila-de-espera.js";
 import { Cliente } from "../entidades/cliente.js";
-import { CancelamentoInvalido, MesaDuplicada, MesaNaoEncontrada } from "../erros.js";
+import {
+    CancelamentoInvalido,
+    FilaTemPrioridade,
+    GrupoSemMesaPossivel,
+    MesaDuplicada,
+    MesaNaoEncontrada
+} from "../erros.js";
 
-/** Toda operação que mexe na fila compartilhada serializa por esta chave. */
-const CHAVE_FILA = "fila-de-espera";
+/**
+ * Uma decisão de alocação lê todas as mesas e a fila ao mesmo tempo, então o
+ * recurso a travar é o salão inteiro — não uma mesa. Chave única também
+ * significa que não há travas aninhadas e, portanto, nenhuma ordem a respeitar.
+ */
+const CHAVE_SALAO = "salao";
 
 /** Retrato imutável de uma mesa, para leitura fora do domínio. */
 export interface InfoMesa {
@@ -37,6 +47,11 @@ export interface ResultadoReserva {
     cliente: Cliente;
     status: StatusMesa;
 }
+
+/** O cliente foi recebido: ou sentou numa mesa, ou entrou na fila. */
+export type ResultadoRecepcao =
+    | { destino: "mesa"; mesa: InfoMesa }
+    | { destino: "fila"; posicao: number; item: ItemFila };
 
 export interface ResultadoLiberacao {
     mesaId: string;
@@ -111,6 +126,14 @@ export class MotorGerente {
         return this.#filaDeEspera.tempoMedioDeEsperaEmSegundos;
     }
 
+    get maiorCapacidade(): number {
+        let maior = 0;
+        for (const mesa of this.#mesas.values()) {
+            maior = Math.max(maior, mesa.capacidade);
+        }
+        return maior;
+    }
+
     /** Reservada e ocupada contam como ocupação — as duas tiram a mesa de circulação. */
     get taxaDeOcupacao(): number {
         if (this.#mesas.size === 0) {
@@ -130,23 +153,66 @@ export class MotorGerente {
         };
     }
 
-    async entrarNaFila(cliente: Cliente): Promise<ItemFila> {
-        return this.#trava.executarComExclusividade(CHAVE_FILA, () =>
-            this.#filaDeEspera.adicionar(cliente)
-        );
+    /**
+     * Porta de entrada do salão: senta o cliente na melhor mesa livre ou o
+     * coloca na fila. É aqui que a ordem de chegada é garantida — use este
+     * método em vez de escolher a mesa na mão.
+     */
+    async receberCliente(cliente: Cliente): Promise<ResultadoRecepcao> {
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => {
+            const maior = this.maiorCapacidade;
+            if (cliente.quantidadePessoas > maior) {
+                throw new GrupoSemMesaPossivel(cliente.quantidadePessoas, maior);
+            }
+
+            const mesa = this.#melhorMesaLivrePara(cliente);
+            if (mesa !== null) {
+                mesa.reservar(cliente);
+                return { destino: "mesa", mesa: retratar(mesa) };
+            }
+
+            const item = this.#filaDeEspera.adicionar(cliente);
+            return { destino: "fila", posicao: this.#filaDeEspera.tamanhoDaFila, item };
+        });
     }
 
-    /** Desistência: sai da fila de espera. Não mexe em mesa nenhuma. */
-    async sairDaFila(telefone: string): Promise<ItemFila | null> {
-        return this.#trava.executarComExclusividade(CHAVE_FILA, () =>
-            this.#filaDeEspera.remover(telefone)
-        );
+    /**
+     * Melhor mesa livre para o grupo: a menor que o acomode, para não gastar
+     * uma mesa grande com um casal. Uma mesa é descartada se alguém que já
+     * está na fila também caberia nela — quem chegou antes tem prioridade.
+     */
+    #melhorMesaLivrePara(cliente: Cliente): Mesa | null {
+        const candidatas = Array.from(this.#mesas.values())
+            .filter((mesa) => mesa.estaDisponivel && mesa.podeAcomodar(cliente.quantidadePessoas))
+            .sort((a, b) => a.capacidade - b.capacidade);
+
+        for (const mesa of candidatas) {
+            const esperando = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
+            if (esperando === null || esperando.cliente.telefone === cliente.telefone) {
+                return mesa;
+            }
+        }
+        return null;
     }
 
+    /**
+     * Coloca o cliente numa mesa escolhida a dedo. Continua valendo a ordem de
+     * chegada: se alguém na fila cabe nessa mesa, só ele pode recebê-la — e,
+     * nesse caso, sai da fila ao sentar.
+     */
     async fazerReserva(mesaId: string, cliente: Cliente): Promise<ResultadoReserva> {
-        return this.#trava.executarComExclusividade(mesaId, () => {
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => {
             const mesa = this.#obterMesa(mesaId);
+            const esperando = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
+
+            if (esperando !== null && esperando.cliente.telefone !== cliente.telefone) {
+                throw new FilaTemPrioridade(mesa.id, esperando.cliente.nome);
+            }
+
             mesa.reservar(cliente);
+            if (esperando !== null) {
+                this.#filaDeEspera.confirmarAtendimento(esperando);
+            }
 
             return {
                 mesaId: mesa.id,
@@ -159,11 +225,24 @@ export class MotorGerente {
 
     /** O grupo que reservou chegou e sentou. */
     async ocuparMesa(mesaId: string): Promise<InfoMesa> {
-        return this.#trava.executarComExclusividade(mesaId, () => {
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => {
             const mesa = this.#obterMesa(mesaId);
             mesa.ocupar();
             return retratar(mesa);
         });
+    }
+
+    async entrarNaFila(cliente: Cliente): Promise<ItemFila> {
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () =>
+            this.#filaDeEspera.adicionar(cliente)
+        );
+    }
+
+    /** Desistência: sai da fila de espera. Não mexe em mesa nenhuma. */
+    async sairDaFila(telefone: string): Promise<ItemFila | null> {
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () =>
+            this.#filaDeEspera.remover(telefone)
+        );
     }
 
     /** O grupo foi embora: a mesa vira e o próximo da fila que couber assume. */
@@ -180,43 +259,37 @@ export class MotorGerente {
         });
     }
 
-    /**
-     * Adquire a trava da mesa e só então a da fila — sempre nessa ordem, em
-     * todo o serviço, para que travas aninhadas não se cruzem.
-     */
     #desocupar(mesaId: string, validar: ((mesa: Mesa) => void) | null): Promise<ResultadoLiberacao> {
-        return this.#trava.executarComExclusividade(mesaId, () =>
-            this.#trava.executarComExclusividade(CHAVE_FILA, () => {
-                const mesa = this.#obterMesa(mesaId);
-                if (validar !== null) {
-                    validar(mesa);
-                }
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => {
+            const mesa = this.#obterMesa(mesaId);
+            if (validar !== null) {
+                validar(mesa);
+            }
 
-                const clienteAnterior = mesa.liberar();
-                const proximo = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
+            const clienteAnterior = mesa.liberar();
+            const proximo = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
 
-                if (proximo === null) {
-                    return {
-                        mesaId: mesa.id,
-                        mesaNumero: mesa.numero,
-                        clienteAnterior,
-                        atendido: null,
-                        status: mesa.status
-                    };
-                }
-
-                // A mesa aceita primeiro; só depois o cliente sai da fila.
-                mesa.reservar(proximo.cliente);
-                this.#filaDeEspera.confirmarAtendimento(proximo);
-
+            if (proximo === null) {
                 return {
                     mesaId: mesa.id,
                     mesaNumero: mesa.numero,
                     clienteAnterior,
-                    atendido: proximo.cliente,
+                    atendido: null,
                     status: mesa.status
                 };
-            })
-        );
+            }
+
+            // A mesa aceita primeiro; só depois o cliente sai da fila.
+            mesa.reservar(proximo.cliente);
+            this.#filaDeEspera.confirmarAtendimento(proximo);
+
+            return {
+                mesaId: mesa.id,
+                mesaNumero: mesa.numero,
+                clienteAnterior,
+                atendido: proximo.cliente,
+                status: mesa.status
+            };
+        });
     }
 }

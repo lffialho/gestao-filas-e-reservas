@@ -84,6 +84,18 @@ describe("MotorGerente", () => {
             assert.equal(motor.consultarMesa("m2")?.status, StatusMesa.DISPONIVEL);
         });
 
+        it("não deixa quem acabou de chegar furar a fila", async () => {
+            const motor = montarMotor();
+            // Fernando espera por uma mesa de 2 desde antes.
+            await motor.entrarNaFila(cliente("Fernando", 2, "2222"));
+
+            await assert.rejects(
+                motor.fazerReserva("m2", cliente("Recem-chegado", 2, "9999")),
+                { name: "FilaTemPrioridade" }
+            );
+            assert.equal(motor.consultarMesa("m2")?.status, StatusMesa.DISPONIVEL);
+        });
+
         it("recusa mesa inexistente", async () => {
             const motor = montarMotor();
             await assert.rejects(motor.fazerReserva("m99", cliente("Ana", 2, "1111")), MesaNaoEncontrada);
@@ -105,6 +117,100 @@ describe("MotorGerente", () => {
 
             const aceitas = resultados.filter((r) => r.status === "fulfilled");
             assert.equal(aceitas.length, 1, "uma mesa não pode ser reservada duas vezes");
+        });
+    });
+
+    describe("receberCliente — ordem de chegada", () => {
+        it("senta na menor mesa que acomoda o grupo", async () => {
+            const motor = montarMotor();
+            const resultado = await motor.receberCliente(cliente("Casal", 2, "1111"));
+
+            assert.equal(resultado.destino, "mesa");
+            if (resultado.destino !== "mesa") return;
+            assert.equal(resultado.mesa.capacidade, 2, "não gasta a mesa de 4 com um casal");
+            assert.equal(resultado.mesa.cliente?.nome, "Casal");
+        });
+
+        it("manda para a fila quando não há mesa livre que sirva", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+            await motor.receberCliente(cliente("Bruno", 2, "2222"));
+
+            const terceiro = await motor.receberCliente(cliente("Carla", 2, "3333"));
+
+            assert.equal(terceiro.destino, "fila");
+            if (terceiro.destino !== "fila") return;
+            assert.equal(terceiro.posicao, 1);
+        });
+
+        it("quem chegou depois não passa na frente de quem espera", async () => {
+            const motor = montarMotor();
+            // m1 (4 lug.) e m2 (2 lug.) ocupadas; Fernando entra na fila.
+            await motor.receberCliente(cliente("Ana", 4, "1111"));
+            await motor.receberCliente(cliente("Bruno", 2, "2222"));
+            await motor.receberCliente(cliente("Fernando", 2, "3333"));
+
+            // A m2 vira, mas é o Fernando quem a recebe.
+            await motor.liberarMesa("m2");
+            assert.equal(motor.consultarMesa("m2")?.cliente?.nome, "Fernando");
+
+            // Agora a m1 vira e um recém-chegado tenta pegá-la.
+            await motor.liberarMesa("m1");
+            const novo = await motor.receberCliente(cliente("Recem-chegado", 2, "4444"));
+            assert.equal(novo.destino, "mesa", "fila vazia: pode sentar");
+        });
+
+        it("grupo grande na fila não bloqueia mesa em que ele não cabe", async () => {
+            const motor = montarMotor();
+            // Um grupo de 4 espera porque a m1 (4 lug.) está ocupada.
+            await motor.receberCliente(cliente("Ana", 4, "1111"));
+            const grupo = await motor.receberCliente(cliente("Grupo de 4", 4, "2222"));
+            assert.equal(grupo.destino, "fila");
+
+            // A m2 (2 lug.) está livre e o grupo de 4 não cabe nela:
+            // o casal que chega agora deve ser sentado, não barrado.
+            const casal = await motor.receberCliente(cliente("Casal", 2, "3333"));
+
+            assert.equal(casal.destino, "mesa");
+            if (casal.destino !== "mesa") return;
+            assert.equal(casal.mesa.id, "m2");
+            assert.equal(motor.tamanhoFilaEspera, 1, "o grupo de 4 continua esperando");
+        });
+
+        it("recusa grupo maior que a maior mesa do salão", async () => {
+            const motor = montarMotor();
+            await assert.rejects(motor.receberCliente(cliente("Excursão", 20, "1111")), {
+                name: "GrupoSemMesaPossivel"
+            });
+            assert.equal(motor.tamanhoFilaEspera, 0, "não faz esperar por mesa que não existe");
+        });
+
+        it("recepções concorrentes não dão a mesma mesa a dois clientes", async () => {
+            const motor = new MotorGerente();
+            motor.adicionarMesa(new Mesa("unica", 1, 2));
+
+            const resultados = await Promise.all([
+                motor.receberCliente(cliente("Ana", 2, "1111")),
+                motor.receberCliente(cliente("Bruno", 2, "2222"))
+            ]);
+
+            const naMesa = resultados.filter((r) => r.destino === "mesa");
+            assert.equal(naMesa.length, 1, "só um pode sentar");
+            assert.equal(motor.tamanhoFilaEspera, 1, "o outro foi para a fila");
+        });
+    });
+
+    describe("fazerReserva com cliente da fila", () => {
+        it("deixa o anfitrião sentar quem está na fila, removendo-o dela", async () => {
+            const motor = montarMotor();
+            const fernando = cliente("Fernando", 2, "2222");
+            await motor.entrarNaFila(fernando);
+
+            const reserva = await motor.fazerReserva("m1", fernando);
+
+            assert.equal(reserva.cliente.nome, "Fernando");
+            assert.equal(motor.tamanhoFilaEspera, 0, "saiu da fila ao sentar");
+            assert.equal(motor.consultarMesa("m1")?.cliente?.nome, "Fernando");
         });
     });
 
