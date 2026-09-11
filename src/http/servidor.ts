@@ -5,7 +5,6 @@ import { DadosInvalidos } from "../dominio/erros.js";
 import type { MotorGerente } from "../dominio/servicos/motor-gerente.js";
 import { descreverErro, registradorSilencioso, type Registrador } from "../compartilhado/log/registrador.js";
 import { autenticadorAberto, type Autenticador } from "./autenticacao.js";
-import { ServidorDeEstaticos } from "./estaticos.js";
 import { traduzirErro } from "./erros-http.js";
 import { itemFilaJson, liberacaoJson, recepcaoJson, reservaJson } from "./representacoes.js";
 
@@ -256,30 +255,6 @@ export interface OpcoesDoServidor {
     /** Sem autenticador, a API fica aberta — só para desenvolvimento. */
     autenticador?: Autenticador | undefined;
     registrador?: Registrador | undefined;
-    /** Pasta com a interface. Sem ela, o servidor só atende a API. */
-    pastaDaInterface?: string | undefined;
-}
-
-/**
- * A interface vem antes da API, mas nunca na frente dela: só se tenta servir
- * arquivo quando o caminho não casa com rota conhecida. Assim `/salao` é
- * sempre a API, mesmo que exista um arquivo com esse nome na pasta.
- */
-async function serviuInterface(
-    estaticos: ServidorDeEstaticos | null,
-    todas: readonly Rota[],
-    requisicao: IncomingMessage,
-    resposta: ServerResponse,
-    metodo: string,
-    caminho: string
-): Promise<boolean> {
-    if (estaticos === null) {
-        return false;
-    }
-    if (casar(todas, metodo, segmentosDe(caminho)).casamento !== null) {
-        return false;
-    }
-    return estaticos.tentarServir(requisicao, resposta, caminho);
 }
 
 interface RespostaComCabecalhos extends Resposta {
@@ -351,8 +326,6 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
     const todas = rotas(motor);
     const autenticador = opcoes.autenticador ?? autenticadorAberto;
     const registrador = opcoes.registrador ?? registradorSilencioso;
-    const estaticos =
-        opcoes.pastaDaInterface === undefined ? null : new ServidorDeEstaticos(opcoes.pastaDaInterface);
 
     return createServer((requisicao, resposta) => {
         const comecou = process.hrtime.bigint();
@@ -373,10 +346,6 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
             try {
                 const url = new URL(requisicao.url ?? "/", "http://local");
                 caminhoRegistrado = url.pathname;
-
-                if (await serviuInterface(estaticos, todas, requisicao, resposta, metodo, url.pathname)) {
-                    return;
-                }
 
                 const resultado = await despachar({
                     todas,

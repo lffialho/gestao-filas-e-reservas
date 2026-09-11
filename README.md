@@ -4,6 +4,9 @@ Backend para atendimento de salão de restaurante **por ordem de chegada**. Não
 marcada: quem chega é sentado na menor mesa que o acomoda ou entra na fila, e quando uma
 mesa vira ela vai para o primeiro da fila que couber nela.
 
+É só o backend: domínio, persistência e API HTTP. Não há interface — qualquer cliente que
+fale HTTP serve.
+
 Sem dependências de runtime. Banco, servidor e testes usam só o que vem no Node
 (`node:sqlite`, `node:http`, `node:test`).
 
@@ -47,29 +50,6 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
 
-### Simulação do salão
-
-Com o serviço de pé, abra `http://localhost:3000` no navegador. Há uma simulação do salão em
-vista isométrica: **arraste as mesas** para reorganizar a planta, receba clientes pelo painel
-e acompanhe fila, ocupação e tempo médio de espera.
-
-A tela não tem regra de negócio nenhuma — ela conversa com a mesma API HTTP que qualquer
-outro cliente usaria. Quem decide onde o cliente senta é o servidor; arrastar uma mesa é um
-`POST /mesas/:id/posicao`, e se o servidor recusar (ladrilho ocupado, fora da planta) a mesa
-volta para onde estava, porque a verdade é dele.
-
-A página pede o `SALAO_TOKEN` na primeira vez e o guarda só naquela aba. Para não servir a
-interface, use `SALAO_INTERFACE=0`.
-
-O desenho fica em `publico/desenho.js`, separado da conversa com o servidor em
-`publico/simulacao.js` — pintura e rede são coisas diferentes. A direção visual é deliberada:
-sala de jogo isométrico dos anos 2000, com parede, chão de madeira, contorno grosso e cor
-chapada. A fonte é Tahoma porque era a desses jogos, está em toda máquina e não exige baixar
-nada — o projeto não tem dependência de runtime e a interface não é exceção.
-
-Lembre que com `SALAO_BANCO` a simulação **persiste**: o salão volta como você deixou. Apague
-o arquivo do banco para recomeçar do zero.
-
 ### Configuração
 
 | Variável | Padrão | Efeito |
@@ -78,7 +58,6 @@ o arquivo do banco para recomeçar do zero.
 | `SALAO_TOKEN` | — | Token da equipe, exigido em toda rota menos `/saude` |
 | `SALAO_SEM_AUTENTICACAO` | — | `1` abre a API. Só para desenvolvimento |
 | `SALAO_BANCO` | — | Caminho de um arquivo SQLite. Sem ela o salão fica em memória e é perdido ao encerrar |
-| `SALAO_INTERFACE` | — | `0` não serve a simulação, só a API |
 
 **O serviço não sobe sem `SALAO_TOKEN`.** Uma API que opera o salão aberta por omissão é o
 tipo de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
@@ -201,21 +180,20 @@ src/
     memoria/       repositório em memória
     sqlite/        repositório em SQLite (node:sqlite)
     notificacao/   notificador que registra no log
-  http/            servidor, rotas, autenticação, estáticos, erro → status
+  http/            servidor, rotas, autenticação, erro → status
   compartilhado/   trava assíncrona, relógio injetável, log estruturado
   main.ts          ponto de entrada do serviço
   demo.ts          roteiro de demonstração
   index.ts         superfície pública do pacote (só reexporta)
-
-publico/           simulação do salão — HTML, CSS e canvas, sem build
 ```
 
 Quatro decisões explicam o resto:
 
 **Posição é planta, não regra.** Mesa tem lugar no salão porque estabelecimento real tem
-disposição de mesas, e quem opera precisa reconhecer "a mesa do canto". Mas nenhuma regra de
-alocação usa posição: quem senta onde continua sendo decidido por capacidade e ordem de
-chegada. Há teste fixando isso — a mesa pequena no fundo vence a grande na entrada.
+disposição de mesas, e quem opera precisa reconhecer "a mesa do canto" — `POST
+/mesas/:id/posicao` move uma. Mas nenhuma regra de alocação usa posição: quem senta onde
+continua sendo decidido por capacidade e ordem de chegada. Há teste fixando isso — a mesa
+pequena no fundo vence a grande na entrada.
 
 **O agregado é o salão, não a mesa.** Mesas e fila precisam mudar juntas para continuarem
 coerentes — dar uma mesa a alguém é, no mesmo instante, tirá-lo da fila. Por isso a
