@@ -12,12 +12,32 @@ Sem dependências de runtime. Banco, servidor e testes usam só o que vem no Nod
 ```bash
 npm install
 npm run build
+npm run start:env
+```
+
+`start:env` lê a configuração de um arquivo `.env`, então funciona igual em qualquer shell —
+sem sintaxe de variável de ambiente. Comece copiando o exemplo:
+
+```bash
+cp .env.example .env      # PowerShell: Copy-Item .env.example .env
+```
+
+Se preferir passar na linha de comando, a sintaxe muda conforme o shell:
+
+```bash
+# bash, zsh
 SALAO_TOKEN=um-token-secreto npm start
+```
+
+```powershell
+# PowerShell
+$env:SALAO_TOKEN = "um-token-secreto"; npm start
 ```
 
 | Script | O que faz |
 | --- | --- |
-| `npm start` | Sobe o serviço (precisa de `dist/`, então rode `build` antes) |
+| `npm run start:env` | Sobe o serviço lendo o `.env` — funciona em qualquer shell |
+| `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm test` | 145 testes |
@@ -55,12 +75,8 @@ interface, use `SALAO_INTERFACE=0`.
 tipo de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
 `SALAO_SEM_AUTENTICACAO=1`.
 
-```bash
-PORTA=3131 SALAO_BANCO=./salao.db SALAO_TOKEN=segredo npm start
-```
-
-Para não repetir variável na linha de comando, copie `.env.example` para `.env` e use
-`npm run start:env`. O `.env` fica fora do git.
+O jeito recomendado é pôr tudo no `.env` e usar `npm run start:env`. O arquivo fica fora do
+git, e o comando é o mesmo em qualquer sistema.
 
 ## API
 
@@ -177,11 +193,12 @@ src/
     sqlite/        repositório em SQLite (node:sqlite)
     notificacao/   notificador que registra no log
   http/            servidor, rotas, autenticação, estáticos, erro → status
-publico/           simulação do salão (HTML, CSS e canvas, sem build)
   compartilhado/   trava assíncrona, relógio injetável, log estruturado
   main.ts          ponto de entrada do serviço
   demo.ts          roteiro de demonstração
   index.ts         superfície pública do pacote (só reexporta)
+
+publico/           simulação do salão — HTML, CSS e canvas, sem build
 ```
 
 Quatro decisões explicam o resto:
