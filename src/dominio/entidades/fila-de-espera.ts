@@ -1,9 +1,9 @@
 import { Cliente } from "./cliente.js";
+import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
+import { ClienteJaNaFila, ItemForaDaFila } from "../erros.js";
 
 export interface ItemFila {
-    cliente: Cliente | string;
-    telefone: string;
-    tamanhoGrupo: number;
+    cliente: Cliente;
     dataEntrada: Date;
     dataAtendimento?: Date;
 }
@@ -11,56 +11,59 @@ export interface ItemFila {
 export class FilaDeEspera {
     #clientes: ItemFila[];
     #historicoAtendimentos: number[];
+    #relogio: Relogio;
 
-    constructor() {
+    constructor(relogio: Relogio = relogioDoSistema) {
         this.#clientes = [];
         this.#historicoAtendimentos = [];
+        this.#relogio = relogio;
     }
 
-    adicionar(cliente: Cliente | string, tamanhoGrupo: number, telefone: string): ItemFila {
+    adicionar(cliente: Cliente): ItemFila {
+        if (this.#clientes.some((item) => item.cliente.telefone === cliente.telefone)) {
+            throw new ClienteJaNaFila(cliente.telefone);
+        }
+
         const novoCadastro: ItemFila = {
             cliente,
-            telefone,
-            tamanhoGrupo,
-            dataEntrada: new Date()
+            dataEntrada: this.#relogio.agora()
         };
         this.#clientes.push(novoCadastro);
         return novoCadastro;
     }
 
     remover(telefone: string): ItemFila | null {
-        const index = this.#clientes.findIndex((item) => item.telefone === telefone);
+        const index = this.#clientes.findIndex((item) => item.cliente.telefone === telefone);
 
-        if (index !== -1) {
-            const [clienteRemovido] = this.#clientes.splice(index, 1);
-            return clienteRemovido;
-        } else {
+        if (index === -1) {
             return null;
         }
+        const [clienteRemovido] = this.#clientes.splice(index, 1);
+        return clienteRemovido ?? null;
     }
 
-    proximo(): ItemFila | undefined {
-        return this.#clientes.shift();
-    }
-
+    /**
+     * Espia o primeiro da fila que cabe na mesa, SEM removê-lo. Quem chama
+     * confirma com `confirmarAtendimento` só depois de a mesa aceitar a
+     * reserva — assim uma falha no meio não some com o cliente.
+     */
     proximoCompativel(capacidadeDaMesa: number): ItemFila | null {
-        const index = this.#clientes.findIndex((item) => item.tamanhoGrupo <= capacidadeDaMesa);
+        return this.#clientes.find((item) => item.cliente.quantidadePessoas <= capacidadeDaMesa) ?? null;
+    }
 
-        if (index !== -1) {
-            const [clienteRemovido] = this.#clientes.splice(index, 1);
-
-            clienteRemovido.dataAtendimento = new Date();
-
-            const tempoEsperaEmSegundos = Math.floor(
-                (clienteRemovido.dataAtendimento.getTime() - clienteRemovido.dataEntrada.getTime()) / 1000
-            );
-
-            this.#historicoAtendimentos.push(tempoEsperaEmSegundos);
-
-            return clienteRemovido;
-        } else {
-            return null;
+    /** Tira o item da fila e contabiliza quanto ele esperou. */
+    confirmarAtendimento(item: ItemFila): void {
+        const index = this.#clientes.indexOf(item);
+        if (index === -1) {
+            throw new ItemForaDaFila();
         }
+        this.#clientes.splice(index, 1);
+
+        const atendimento = this.#relogio.agora();
+        item.dataAtendimento = atendimento;
+        this.#historicoAtendimentos.push(
+            Math.floor((atendimento.getTime() - item.dataEntrada.getTime()) / 1000)
+        );
     }
 
     get tempoMedioDeEsperaEmSegundos(): number {

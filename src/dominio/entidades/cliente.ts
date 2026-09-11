@@ -1,12 +1,39 @@
+import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
+import { DadosInvalidos } from "../erros.js";
+
+/**
+ * O telefone é a identidade do cliente: é por ele que se remove da fila e se
+ * avisa que a mesa está pronta. `quantidadePessoas` é a única fonte de verdade
+ * do tamanho do grupo — nenhuma operação recebe esse número por fora.
+ */
 export class Cliente {
     #nome: string;
     #quantidadePessoas: number;
+    #telefone: string;
     #horaChegada: Date;
 
-    constructor(nome: string, quantidadePessoas: number = 1) {
-        this.#nome = nome;
+    constructor(
+        nome: string,
+        quantidadePessoas: number,
+        telefone: string,
+        relogio: Relogio = relogioDoSistema
+    ) {
+        if (nome.trim() === "") {
+            throw new DadosInvalidos("O nome do cliente não pode ser vazio.");
+        }
+        if (!Number.isInteger(quantidadePessoas) || quantidadePessoas < 1) {
+            throw new DadosInvalidos(
+                `Quantidade de pessoas inválida: ${quantidadePessoas}. Informe um inteiro maior que zero.`
+            );
+        }
+        if (telefone.trim() === "") {
+            throw new DadosInvalidos("O telefone do cliente não pode ser vazio.");
+        }
+
+        this.#nome = nome.trim();
         this.#quantidadePessoas = quantidadePessoas;
-        this.#horaChegada = new Date();
+        this.#telefone = telefone.trim();
+        this.#horaChegada = relogio.agora();
     }
 
     get nome(): string {
@@ -17,7 +44,11 @@ export class Cliente {
         return this.#quantidadePessoas;
     }
 
+    get telefone(): string {
+        return this.#telefone;
+    }
+
     get horaChegada(): Date {
-        return this.#horaChegada;
+        return new Date(this.#horaChegada);
     }
 }
