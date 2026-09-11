@@ -8,25 +8,26 @@
  * estava, porque a verdade é dele.
  */
 
-const COLUNAS = 12;
-const LINHAS = 9;
-const LADRILHO_L = 74; // largura do losango
-const LADRILHO_A = 37; // altura do losango
-
-const CORES = {
-    DISPONIVEL: { topo: "#3f8d7f", lado: "#2c6559", borda: "#57b9a6" },
-    RESERVADA: { topo: "#b5852e", lado: "#8a641f", borda: "#e0ac45" },
-    OCUPADA: { topo: "#a8462f", lado: "#7d3322", borda: "#d1604a" }
-};
+import { criarPalco } from "./desenho.js";
 
 const tela = document.getElementById("salao");
-const pincel = tela.getContext("2d");
+const palco = criarPalco(tela);
 
 let salao = { mesas: [], taxaOcupacaoPercentual: 0, tempoMedioEsperaSegundos: 0, tamanhoFila: 0 };
 let fila = [];
 let selecionada = null;
 let arraste = null;
 let hover = null;
+
+function desenhar() {
+    palco.desenhar({
+        mesas: salao.mesas,
+        fila,
+        selecionada,
+        arrastando: arraste === null ? null : arraste.id,
+        destaque: hover
+    });
+}
 
 // ---------------------------------------------------------------- API ---
 
@@ -109,130 +110,6 @@ async function executar(acao) {
     }
 }
 
-// ------------------------------------------------------------ desenho ---
-
-function paraTela(coluna, linha) {
-    const origemX = tela.width / 2;
-    const origemY = 92;
-    return {
-        x: origemX + (coluna - linha) * (LADRILHO_L / 2),
-        y: origemY + (coluna + linha) * (LADRILHO_A / 2)
-    };
-}
-
-/** Inverte a projeção: de pixel para ladrilho. */
-function paraPlanta(x, y) {
-    const origemX = tela.width / 2;
-    const origemY = 92;
-    const dx = (x - origemX) / (LADRILHO_L / 2);
-    const dy = (y - origemY) / (LADRILHO_A / 2);
-    return {
-        coluna: Math.round((dy + dx) / 2),
-        linha: Math.round((dy - dx) / 2)
-    };
-}
-
-function losango(x, y, largura, altura) {
-    pincel.beginPath();
-    pincel.moveTo(x, y - altura / 2);
-    pincel.lineTo(x + largura / 2, y);
-    pincel.lineTo(x, y + altura / 2);
-    pincel.lineTo(x - largura / 2, y);
-    pincel.closePath();
-}
-
-function desenharPiso() {
-    for (let linha = 0; linha < LINHAS; linha++) {
-        for (let coluna = 0; coluna < COLUNAS; coluna++) {
-            const { x, y } = paraTela(coluna, linha);
-            const claro = (coluna + linha) % 2 === 0;
-
-            losango(x, y, LADRILHO_L, LADRILHO_A);
-            const alvo = arraste !== null && hover !== null && hover.coluna === coluna && hover.linha === linha;
-            pincel.fillStyle = alvo ? "#2f4b46" : claro ? "#20292d" : "#1b2326";
-            pincel.fill();
-            pincel.strokeStyle = "#161d20";
-            pincel.lineWidth = 1;
-            pincel.stroke();
-        }
-    }
-}
-
-function desenharMesa(mesa, posicao, realcar) {
-    const { x, y } = paraTela(posicao.coluna, posicao.linha);
-    const cor = CORES[mesa.status] ?? CORES.DISPONIVEL;
-
-    // Mesa maior ocupa mais do ladrilho: dá para ler a capacidade de longe.
-    const escala = Math.min(0.82, 0.44 + mesa.capacidade * 0.055);
-    const largura = LADRILHO_L * escala;
-    const altura = LADRILHO_A * escala;
-    const espessura = 13;
-
-    pincel.save();
-    if (realcar) {
-        pincel.shadowColor = "rgba(0,0,0,.55)";
-        pincel.shadowBlur = 18;
-        pincel.shadowOffsetY = 7;
-    }
-
-    // corpo
-    pincel.beginPath();
-    pincel.moveTo(x - largura / 2, y);
-    pincel.lineTo(x, y + altura / 2);
-    pincel.lineTo(x + largura / 2, y);
-    pincel.lineTo(x + largura / 2, y + espessura);
-    pincel.lineTo(x, y + altura / 2 + espessura);
-    pincel.lineTo(x - largura / 2, y + espessura);
-    pincel.closePath();
-    pincel.fillStyle = cor.lado;
-    pincel.fill();
-
-    // tampo
-    losango(x, y, largura, altura);
-    pincel.fillStyle = cor.topo;
-    pincel.fill();
-    pincel.strokeStyle = realcar ? "#ffffff" : cor.borda;
-    pincel.lineWidth = realcar ? 2 : 1.2;
-    pincel.stroke();
-    pincel.restore();
-
-    // número da mesa
-    pincel.fillStyle = "rgba(255,255,255,.92)";
-    pincel.font = "600 13px 'Segoe UI', sans-serif";
-    pincel.textAlign = "center";
-    pincel.textBaseline = "middle";
-    pincel.fillText(String(mesa.numero), x, y);
-
-    // lugares
-    pincel.fillStyle = "rgba(255,255,255,.5)";
-    pincel.font = "10px 'Segoe UI', sans-serif";
-    pincel.fillText(`${mesa.capacidade} lug.`, x, y + altura / 2 + espessura + 9);
-
-    if (mesa.cliente !== null) {
-        pincel.fillStyle = "rgba(255,255,255,.88)";
-        pincel.font = "600 11px 'Segoe UI', sans-serif";
-        pincel.fillText(mesa.cliente.nome, x, y - altura / 2 - 10);
-    }
-}
-
-function desenhar() {
-    pincel.clearRect(0, 0, tela.width, tela.height);
-    desenharPiso();
-
-    // Do fundo para a frente, senão mesa de trás cobre a da frente.
-    const ordenadas = salao.mesas
-        .filter((m) => m.posicao !== null)
-        .map((mesa) => ({
-            mesa,
-            posicao: arraste !== null && arraste.id === mesa.id && hover !== null ? hover : mesa.posicao
-        }))
-        .sort((a, b) => a.posicao.coluna + a.posicao.linha - (b.posicao.coluna + b.posicao.linha));
-
-    for (const { mesa, posicao } of ordenadas) {
-        desenharMesa(mesa, posicao, selecionada === mesa.id || arraste?.id === mesa.id);
-    }
-}
-
 // ----------------------------------------------------------- arrastar ---
 
 function pontoDoEvento(evento) {
@@ -250,12 +127,12 @@ function mesaEm(coluna, linha) {
 }
 
 function dentroDaPlanta(p) {
-    return p.coluna >= 0 && p.linha >= 0 && p.coluna < COLUNAS && p.linha < LINHAS;
+    return p.coluna >= 0 && p.linha >= 0 && p.coluna < palco.COLUNAS && p.linha < palco.LINHAS;
 }
 
 tela.addEventListener("pointerdown", (evento) => {
     const { x, y } = pontoDoEvento(evento);
-    const alvo = paraPlanta(x, y);
+    const alvo = palco.paraPlanta(x, y);
     if (!dentroDaPlanta(alvo)) return;
 
     const mesa = mesaEm(alvo.coluna, alvo.linha);
@@ -272,7 +149,7 @@ tela.addEventListener("pointermove", (evento) => {
     if (arraste === null) return;
 
     const { x, y } = pontoDoEvento(evento);
-    const alvo = paraPlanta(x, y);
+    const alvo = palco.paraPlanta(x, y);
     if (!dentroDaPlanta(alvo)) return;
 
     if (hover === null || hover.coluna !== alvo.coluna || hover.linha !== alvo.linha) {

@@ -61,6 +61,15 @@ volta para onde estava, porque a verdade é dele.
 A página pede o `SALAO_TOKEN` na primeira vez e o guarda só naquela aba. Para não servir a
 interface, use `SALAO_INTERFACE=0`.
 
+O desenho fica em `publico/desenho.js`, separado da conversa com o servidor em
+`publico/simulacao.js` — pintura e rede são coisas diferentes. A direção visual é deliberada:
+sala de jogo isométrico dos anos 2000, com parede, chão de madeira, contorno grosso e cor
+chapada. A fonte é Tahoma porque era a desses jogos, está em toda máquina e não exige baixar
+nada — o projeto não tem dependência de runtime e a interface não é exceção.
+
+Lembre que com `SALAO_BANCO` a simulação **persiste**: o salão volta como você deixou. Apague
+o arquivo do banco para recomeçar do zero.
+
 ### Configuração
 
 | Variável | Padrão | Efeito |

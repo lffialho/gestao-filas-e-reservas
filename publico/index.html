@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<header class="topo">
+<header class="topo peca">
     <h1>Salão</h1>
     <div class="indicadores">
         <span class="indicador"><b id="ind-ocupacao">0%</b><small>ocupação</small></span>
@@ -19,13 +19,13 @@
 </header>
 
 <main>
-    <section class="palco">
-        <canvas id="salao" width="960" height="620"></canvas>
-        <p class="dica">Arraste as mesas para reorganizar o salão. Clique numa mesa para agir sobre ela.</p>
+    <section class="palco peca">
+        <canvas id="salao" width="900" height="620"></canvas>
+        <p class="dica">Arraste as mesas pelo salão. Clique numa para atender.</p>
     </section>
 
     <aside class="painel">
-        <section class="bloco">
+        <section class="bloco peca">
             <h2>Chegou alguém</h2>
             <form id="form-chegada" autocomplete="off">
                 <label>Nome <input id="chegada-nome" required maxlength="40" placeholder="Ana e Bruno"></label>
@@ -38,18 +38,18 @@
             <p class="rodape-bloco">O salão decide: menor mesa que serve, ou fila por ordem de chegada.</p>
         </section>
 
-        <section class="bloco">
+        <section class="bloco peca">
             <h2>Fila de espera <span class="contador" id="fila-contador">0</span></h2>
             <ol class="fila" id="fila"></ol>
         </section>
 
-        <section class="bloco">
+        <section class="bloco peca">
             <h2>Mesa selecionada</h2>
             <div id="detalhe-mesa" class="detalhe vazio">Nenhuma mesa selecionada.</div>
             <div class="acoes" id="acoes-mesa"></div>
         </section>
 
-        <section class="bloco">
+        <section class="bloco peca">
             <h2>Nova mesa</h2>
             <form id="form-mesa" autocomplete="off">
                 <div class="dupla">
@@ -74,6 +74,6 @@
     </form>
 </div>
 
-<script src="/simulacao.js"></script>
+<script type="module" src="/simulacao.js"></script>
 </body>
 </html>

@@ -23,12 +23,17 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_INTERFACE       | —      | "0" não serve a interface, só a API             |
  */
 
+/**
+ * Salão de abertura. As posições são escolhidas, não enfileiradas: mesa de
+ * dois nas bordas, as maiores no miolo, com corredor no meio — a disposição
+ * que um salão de verdade teria, e que a simulação mostra já na primeira vez.
+ */
 const MESAS_DE_ABERTURA = (): Mesa[] => [
-    new Mesa("m1", 1, 2),
-    new Mesa("m2", 2, 2),
-    new Mesa("m3", 3, 4),
-    new Mesa("m4", 4, 4),
-    new Mesa("m5", 5, 6)
+    new Mesa("m1", 1, 2, { coluna: 1, linha: 1 }),
+    new Mesa("m2", 2, 2, { coluna: 1, linha: 6 }),
+    new Mesa("m3", 3, 4, { coluna: 5, linha: 2 }),
+    new Mesa("m4", 4, 4, { coluna: 5, linha: 6 }),
+    new Mesa("m5", 5, 6, { coluna: 9, linha: 4 })
 ];
 
 class ConfiguracaoInvalida extends Error {}
