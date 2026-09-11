@@ -2,6 +2,7 @@ import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogi
 import { Cliente } from "./cliente.js";
 import { FilaDeEspera, type ItemFila } from "./fila-de-espera.js";
 import { Mesa, StatusMesa } from "./mesa.js";
+import { type EstadoDoSalao } from "../estado.js";
 import {
     CancelamentoInvalido,
     FilaTemPrioridade,
@@ -99,6 +100,21 @@ export class Salao {
             throw new MesaDuplicada(mesa.id);
         }
         this.#mesas.set(mesa.id, mesa);
+    }
+
+    /** Recria o salão inteiro a partir do estado gravado. */
+    static reconstituir(estado: EstadoDoSalao, relogio: Relogio = relogioDoSistema): Salao {
+        const salao = new Salao(relogio, estado.mesas.map((mesa) => Mesa.reconstituir(mesa)));
+        salao.#filaDeEspera = FilaDeEspera.reconstituir(estado.fila, relogio);
+        return salao;
+    }
+
+    /** Retrato completo para persistência — ver `EstadoDoSalao`. */
+    estado(): EstadoDoSalao {
+        return {
+            mesas: Array.from(this.#mesas.values()).map((mesa) => mesa.estado()),
+            fila: this.#filaDeEspera.estado()
+        };
     }
 
     #obterMesa(mesaId: string): Mesa {

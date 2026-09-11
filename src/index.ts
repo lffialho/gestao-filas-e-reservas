@@ -2,14 +2,39 @@ import { Mesa } from "./dominio/entidades/mesa.js";
 import { Cliente } from "./dominio/entidades/cliente.js";
 import { MotorGerente } from "./dominio/servicos/motor-gerente.js";
 import { ErroDeDominio } from "./dominio/erros.js";
+import { type RepositorioDoSalao } from "./dominio/portas/repositorio-do-salao.js";
 import { RepositorioDoSalaoEmMemoria } from "./infra/memoria/repositorio-do-salao-em-memoria.js";
+import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sqlite.js";
 
-// As mesas sao configuracao de abertura do salao, nao operacao de runtime.
-const motor = new MotorGerente(
-    new RepositorioDoSalaoEmMemoria({
-        mesas: [new Mesa("m1", 1, 2), new Mesa("m2", 2, 4), new Mesa("m3", 3, 6)]
-    })
-);
+/** As mesas são configuração de abertura do salão, não operação de runtime. */
+const mesasDoSalao = (): Mesa[] => [new Mesa("m1", 1, 2), new Mesa("m2", 2, 4), new Mesa("m3", 3, 6)];
+
+/**
+ * Escolhe onde o salão é guardado. Defina SALAO_BANCO com o caminho de um
+ * arquivo para usar SQLite; sem a variável, o salão vive na memória e some ao
+ * fim do processo. O domínio não sabe a diferença — é esse o ponto da porta.
+ */
+function montarArmazenamento(): { repositorio: RepositorioDoSalao; descricao: string; fechar: () => void } {
+    const caminho = process.env["SALAO_BANCO"];
+
+    if (caminho === undefined || caminho === "") {
+        return {
+            repositorio: new RepositorioDoSalaoEmMemoria({ mesas: mesasDoSalao() }),
+            descricao: "memória (some ao fim do processo)",
+            fechar: () => {}
+        };
+    }
+
+    const sqlite = new RepositorioDoSalaoSqlite(caminho, { mesas: mesasDoSalao() });
+    return {
+        repositorio: sqlite,
+        descricao: `SQLite em ${caminho}`,
+        fechar: () => sqlite.fechar()
+    };
+}
+
+const armazenamento = montarArmazenamento();
+const motor = new MotorGerente(armazenamento.repositorio);
 
 const titulo = (texto: string): void => {
     console.log(`\n--- ${texto} ---`);
@@ -44,11 +69,33 @@ async function liberar(rotulo: string, mesaId: string): Promise<void> {
     }
 }
 
+async function imprimirRelatorio(): Promise<void> {
+    const relatorio = await motor.gerarRelatorio();
+    console.log(`Taxa de ocupação ..... ${relatorio.taxaOcupacaoPercentual}%`);
+    console.log(`Tempo médio de espera  ${relatorio.tempoMedioEsperaSegundos}s`);
+    console.log(`Grupos na fila ....... ${relatorio.tamanhoFila}`);
+    for (const mesa of relatorio.mesas) {
+        const ocupante = mesa.cliente === null ? "—" : mesa.cliente.nome;
+        console.log(`  Mesa ${mesa.numero} (${mesa.capacidade} lug.) ${mesa.status.padEnd(11)} ${ocupante}`);
+    }
+}
+
 async function demonstrar(): Promise<void> {
     console.log("=".repeat(60));
     console.log(" GESTÃO DE FILAS E RESERVAS — atendimento por ordem de chegada");
     console.log("=".repeat(60));
     recuo("Salão: mesas de 2, 4 e 6 lugares.");
+    recuo(`Armazenamento: ${armazenamento.descricao}`);
+
+    // Com SQLite o salão sobrevive ao processo, então numa segunda execução ele
+    // já está em operação — e este roteiro pressupõe salão vazio.
+    if ((await motor.taxaDeOcupacao()) > 0 || (await motor.tamanhoFilaEspera()) > 0) {
+        titulo("Salão já em operação");
+        recuo("Este roteiro pressupõe um salão vazio, então paro aqui.");
+        recuo("O estado abaixo veio do armazenamento, não desta execução:");
+        await imprimirRelatorio();
+        return;
+    }
 
     titulo("Cada grupo vai para a menor mesa que o acomoda");
     await chegou("Ana e Bruno", 2, "1111-1111");
@@ -110,17 +157,14 @@ async function demonstrar(): Promise<void> {
     }
 
     titulo("Relatório");
-    const relatorio = await motor.gerarRelatorio();
-    console.log(`Taxa de ocupação ..... ${relatorio.taxaOcupacaoPercentual}%`);
-    console.log(`Tempo médio de espera  ${relatorio.tempoMedioEsperaSegundos}s`);
-    console.log(`Grupos na fila ....... ${relatorio.tamanhoFila}`);
-    for (const mesa of relatorio.mesas) {
-        const ocupante = mesa.cliente === null ? "—" : mesa.cliente.nome;
-        console.log(`  Mesa ${mesa.numero} (${mesa.capacidade} lug.) ${mesa.status.padEnd(11)} ${ocupante}`);
-    }
+    await imprimirRelatorio();
 }
 
-demonstrar().catch((erro: unknown) => {
-    console.error("A demonstração falhou:", erro);
-    process.exitCode = 1;
-});
+demonstrar()
+    .catch((erro: unknown) => {
+        console.error("A demonstração falhou:", erro);
+        process.exitCode = 1;
+    })
+    .finally(() => {
+        armazenamento.fechar();
+    });

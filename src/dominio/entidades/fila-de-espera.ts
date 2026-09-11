@@ -1,6 +1,7 @@
 import { Cliente } from "./cliente.js";
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
-import { ClienteJaNaFila, ItemForaDaFila } from "../erros.js";
+import { type EstadoDaFila } from "../estado.js";
+import { ClienteJaNaFila, DadosInvalidos, ItemForaDaFila } from "../erros.js";
 
 export interface ItemFila {
     cliente: Cliente;
@@ -80,5 +81,50 @@ export class FilaDeEspera {
 
     estaVazia(): boolean {
         return this.#clientes.length === 0;
+    }
+
+    /**
+     * Recria a fila a partir do estado gravado, preservando a ordem dos itens
+     * e o histórico de esperas já contabilizadas — sem ele o tempo médio
+     * voltaria a zero a cada reinício.
+     */
+    static reconstituir(estado: EstadoDaFila, relogio: Relogio = relogioDoSistema): FilaDeEspera {
+        const fila = new FilaDeEspera(relogio);
+
+        for (const item of estado.itens) {
+            const entrada = new Date(item.dataEntrada);
+            if (Number.isNaN(entrada.getTime())) {
+                throw new DadosInvalidos(`Data de entrada inválida na fila: ${item.dataEntrada}.`);
+            }
+
+            const reconstituido: ItemFila = {
+                cliente: Cliente.reconstituir(item.cliente),
+                dataEntrada: entrada
+            };
+            if (item.dataAtendimento !== null) {
+                reconstituido.dataAtendimento = new Date(item.dataAtendimento);
+            }
+            fila.#clientes.push(reconstituido);
+        }
+
+        for (const segundos of estado.esperasEmSegundos) {
+            if (!Number.isFinite(segundos) || segundos < 0) {
+                throw new DadosInvalidos(`Espera registrada inválida: ${segundos}.`);
+            }
+            fila.#historicoAtendimentos.push(segundos);
+        }
+
+        return fila;
+    }
+
+    estado(): EstadoDaFila {
+        return {
+            itens: this.#clientes.map((item) => ({
+                cliente: item.cliente.estado(),
+                dataEntrada: item.dataEntrada.toISOString(),
+                dataAtendimento: item.dataAtendimento?.toISOString() ?? null
+            })),
+            esperasEmSegundos: [...this.#historicoAtendimentos]
+        };
     }
 }

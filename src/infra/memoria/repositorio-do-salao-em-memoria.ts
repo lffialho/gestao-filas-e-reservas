@@ -13,25 +13,40 @@ export interface OpcoesDoRepositorioEmMemoria {
 }
 
 /**
- * Guarda o salão na memória do processo. É a implementação de teste e a de
+ * Guarda o salão na memória do processo. É a implementação de teste e de
  * desenvolvimento; serve também em produção enquanto houver um único processo
  * e o estado puder ser perdido num reinício.
  *
- * A transação é uma trava: as operações sobre o salão são serializadas, de modo
- * que nenhuma enxerga o salão no meio de uma mudança de outra. Como a operação
- * é síncrona, isso basta — não há `await` dentro da seção crítica por onde uma
- * segunda operação pudesse entrar.
+ * Duas coisas fazem dela uma transação de verdade, e não só uma chamada:
+ *
+ * - a trava serializa as operações, de modo que nenhuma enxergue o salão no
+ *   meio de uma mudança de outra. Como a operação é síncrona, isso basta: não
+ *   há `await` na seção crítica por onde uma segunda pudesse entrar;
+ * - o estado é fotografado antes e restaurado se a operação lançar. Sem isso,
+ *   uma operação que mudasse o salão e falhasse depois deixaria a mudança
+ *   pela metade — e o contrato promete tudo ou nada. A cópia é barata porque o
+ *   agregado é pequeno.
  */
 export class RepositorioDoSalaoEmMemoria implements RepositorioDoSalao {
     #salao: Salao;
     #trava: TravaAssincrona;
+    #relogio: Relogio;
 
     constructor(opcoes: OpcoesDoRepositorioEmMemoria = {}) {
-        this.#salao = new Salao(opcoes.relogio ?? relogioDoSistema, opcoes.mesas ?? []);
+        this.#relogio = opcoes.relogio ?? relogioDoSistema;
+        this.#salao = new Salao(this.#relogio, opcoes.mesas ?? []);
         this.#trava = new TravaAssincrona();
     }
 
     async transacao<T>(operacao: (salao: Salao) => T): Promise<T> {
-        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => operacao(this.#salao));
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => {
+            const anterior = this.#salao.estado();
+            try {
+                return operacao(this.#salao);
+            } catch (erro) {
+                this.#salao = Salao.reconstituir(anterior, this.#relogio);
+                throw erro;
+            }
+        });
     }
 }

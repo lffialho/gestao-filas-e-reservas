@@ -1,4 +1,5 @@
 import { Cliente } from "./cliente.js";
+import { type EstadoDaMesa } from "../estado.js";
 import {
     CapacidadeInsuficiente,
     DadosInvalidos,
@@ -88,6 +89,43 @@ export class Mesa {
             throw new TransicaoInvalida(this.#id, this.#status, "ocupar");
         }
         this.#status = StatusMesa.OCUPADA;
+    }
+
+    /**
+     * Recria uma mesa a partir do estado gravado, validando o que o banco
+     * afirma: o status tem de ser conhecido, e a regra de que uma mesa fora de
+     * DISPONIVEL sempre tem cliente vale aqui também — dado corrompido não
+     * entra no domínio disfarçado de estado válido.
+     */
+    static reconstituir(estado: EstadoDaMesa): Mesa {
+        const mesa = new Mesa(estado.id, estado.numero, estado.capacidade);
+
+        if (!Object.values(StatusMesa).includes(estado.status)) {
+            throw new DadosInvalidos(`Status desconhecido para a mesa "${estado.id}": ${estado.status}.`);
+        }
+        if (estado.status === StatusMesa.DISPONIVEL) {
+            if (estado.cliente !== null) {
+                throw new DadosInvalidos(`Mesa "${estado.id}" está disponível mas tem cliente associado.`);
+            }
+            return mesa;
+        }
+        if (estado.cliente === null) {
+            throw new DadosInvalidos(`Mesa "${estado.id}" está ${estado.status} mas sem cliente.`);
+        }
+
+        mesa.#status = estado.status;
+        mesa.#clienteAtual = Cliente.reconstituir(estado.cliente);
+        return mesa;
+    }
+
+    estado(): EstadoDaMesa {
+        return {
+            id: this.#id,
+            numero: this.#numero,
+            capacidade: this.#capacidade,
+            status: this.#status,
+            cliente: this.#clienteAtual === null ? null : this.#clienteAtual.estado()
+        };
     }
 
     /** Devolve quem estava na mesa, para que o chamador possa informar. */

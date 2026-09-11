@@ -1,4 +1,5 @@
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
+import { type EstadoDoCliente } from "../estado.js";
 import { DadosInvalidos } from "../erros.js";
 
 /**
@@ -50,5 +51,31 @@ export class Cliente {
 
     get horaChegada(): Date {
         return new Date(this.#horaChegada);
+    }
+
+    /**
+     * Recria um cliente já existente a partir do estado gravado. Diferente do
+     * construtor, que marca a hora de chegada como agora: aqui a chegada é a
+     * que foi salva, senão todo reinício zeraria o tempo de espera de quem
+     * está na fila.
+     */
+    static reconstituir(estado: EstadoDoCliente): Cliente {
+        const cliente = new Cliente(estado.nome, estado.quantidadePessoas, estado.telefone);
+        const chegada = new Date(estado.horaChegada);
+
+        if (Number.isNaN(chegada.getTime())) {
+            throw new DadosInvalidos(`Hora de chegada inválida para "${estado.nome}": ${estado.horaChegada}.`);
+        }
+        cliente.#horaChegada = chegada;
+        return cliente;
+    }
+
+    estado(): EstadoDoCliente {
+        return {
+            nome: this.#nome,
+            quantidadePessoas: this.#quantidadePessoas,
+            telefone: this.#telefone,
+            horaChegada: this.#horaChegada.toISOString()
+        };
     }
 }
