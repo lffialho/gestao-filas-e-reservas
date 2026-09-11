@@ -145,8 +145,26 @@ sender ID junto às operadoras, com documentação e carta de autorização, e
 [Sender ID alfanumérico não funciona em conta de teste](https://support.twilio.com/hc/en-us/articles/223181348-Alphanumeric-Sender-ID-for-Twilio-Programmable-SMS)
 — tráfego não registrado costuma ser filtrado pelas operadoras. Já o
 [sandbox de WhatsApp](https://www.twilio.com/docs/whatsapp/sandbox) funciona na hora, sem
-verificação de empresa junto à Meta. Quem for receber precisa entrar no sandbox uma vez,
-mandando o código de adesão para o número da Twilio.
+verificação de empresa junto à Meta.
+
+#### Texto livre ou template
+
+O WhatsApp trata como **iniciada pela empresa** toda mensagem que não seja resposta dentro de
+24h a uma mensagem do cliente — e exige que essas sejam
+[template pré-aprovado](https://www.twilio.com/docs/whatsapp/tutorial/send-whatsapp-notification-messages-templates).
+"Sua mesa está pronta" é exatamente isso.
+
+Na prática:
+
+- **No sandbox**, quem for receber manda o código de adesão (`join ...`) pelo WhatsApp para o
+  número do sandbox. Isso abre a janela de 24h, e durante ela o texto livre passa. É o
+  caminho para testar.
+- **Em produção**, registre um template que receba `{{1}}` = nome e `{{2}}` = número da mesa,
+  e informe o `TWILIO_TEMPLATE_SID`. Com ele configurado, o adaptador manda `ContentSid` e
+  `ContentVariables` em vez de `Body` — o texto passa a vir do template aprovado.
+
+Sem template e fora da janela, a Twilio recusa com `21654 ContentSid Required`. O serviço
+avisa isso na partida quando o canal é WhatsApp e não há template configurado.
 
 O telefone é normalizado para E.164 na fronteira do provedor (`paraE164`), porque o domínio
 guarda telefone como texto livre — é identidade de cliente, e o anfitrião digita

@@ -165,6 +165,48 @@ describe("NotificadorTwilio", () => {
         }
     });
 
+    describe("template aprovado", () => {
+        it("manda ContentSid e ContentVariables, sem Body", async () => {
+            const provedor = await subirProvedorFalso();
+            try {
+                const notificador = new NotificadorTwilio({
+                    contaSid: "AC123",
+                    tokenDeAutenticacao: "token-secreto",
+                    remetente: "+15550001111",
+                    canal: "whatsapp",
+                    templateSid: "HXabc123",
+                    urlBase: provedor.urlBase
+                });
+
+                await notificador.mesaPronta(aviso);
+
+                const campos = provedor.recebidas[0]?.campos;
+                assert.ok(campos);
+                assert.equal(campos.get("ContentSid"), "HXabc123");
+                assert.equal(campos.get("Body"), null, "template não leva Body");
+                assert.deepEqual(JSON.parse(campos.get("ContentVariables") ?? "{}"), {
+                    "1": "Helena",
+                    "2": "3"
+                });
+            } finally {
+                await provedor.fechar();
+            }
+        });
+
+        it("sem templateSid continua mandando Body", async () => {
+            const provedor = await subirProvedorFalso();
+            try {
+                await criar(provedor, "whatsapp").mesaPronta(aviso);
+
+                const campos = provedor.recebidas[0]?.campos;
+                assert.equal(campos?.get("ContentSid"), null);
+                assert.match(campos?.get("Body") ?? "", /Helena/);
+            } finally {
+                await provedor.fechar();
+            }
+        });
+    });
+
     // A Twilio reporta as duas falhas de formas diferentes, e as duas importam.
     it("trata erro de HTTP preservando o código do provedor", async () => {
         const provedor = await subirProvedorFalso();

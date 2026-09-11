@@ -88,20 +88,30 @@ try {
     if (!(erro instanceof FalhaNoProvedor)) {
         console.error("Não deu para falar com a Twilio:", erro instanceof Error ? erro.message : erro);
         console.error("Verifique conexão e se a hora do sistema está certa (TLS é sensível a isso).");
-        process.exit(1);
+        process.exitCode = 1;
+    } else {
+        console.error(`A Twilio recusou. HTTP ${erro.status}, código ${erro.codigoDoProvedor ?? "—"}.`);
+        console.error(`  ${erro.message}`);
+        if (erro.maisInfo !== null) {
+            console.error(`  Documentação do código: ${erro.maisInfo}`);
+        }
+        console.error("");
+        console.error("Causas comuns:");
+        if (erro.codigoDoProvedor === 21654 || erro.codigoDoProvedor === 63016) {
+            console.error("  · o WhatsApp exige template para mensagem iniciada pela empresa.");
+            console.error("    Texto livre só vale como resposta, dentro de 24h de uma mensagem do");
+            console.error("    cliente. Para abrir essa janela no sandbox, mande o código de adesão");
+            console.error("    ('join ...') pelo WhatsApp do aparelho de destino para o remetente.");
+            console.error("    Em produção, registre um template e informe TWILIO_TEMPLATE_SID.");
+        } else {
+            console.error("  · credencial errada — confira Account SID e Auth Token no console;");
+            console.error("  · no sandbox de WhatsApp, o aparelho de destino ainda não entrou:");
+            console.error("    mande o código de adesão pelo WhatsApp para o número do sandbox;");
+            console.error("  · remetente errado — no WhatsApp use o número do sandbox, não o seu;");
+            console.error("  · em conta de teste com SMS, o destino precisa ser um número verificado.");
+        }
+        // exitCode em vez de exit(): sair de supetão com o timer do AbortSignal
+        // ainda pendente quebra o libuv no Windows.
+        process.exitCode = 1;
     }
-
-    console.error(`A Twilio recusou. HTTP ${erro.status}, código ${erro.codigoDoProvedor ?? "—"}.`);
-    console.error(`  ${erro.message}`);
-    if (erro.maisInfo !== null) {
-        console.error(`  Documentação do código: ${erro.maisInfo}`);
-    }
-    console.error("");
-    console.error("Causas comuns:");
-    console.error("  · credencial errada — confira Account SID e Auth Token no console;");
-    console.error("  · no sandbox de WhatsApp, o aparelho de destino ainda não entrou:");
-    console.error("    mande o código de adesão pelo WhatsApp para o número do sandbox;");
-    console.error("  · remetente errado — no WhatsApp use o número do sandbox, não o seu;");
-    console.error("  · em conta de teste com SMS, o destino precisa ser um número verificado.");
-    process.exit(1);
 }

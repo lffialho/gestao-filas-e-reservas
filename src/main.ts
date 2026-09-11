@@ -118,13 +118,27 @@ function montarNotificador(): Notificador {
     }
 
     const canal = process.env["TWILIO_CANAL"] === "whatsapp" ? "whatsapp" : "sms";
-    registrador.info("notificacao_pelo_provedor", { provedor: "twilio", canal });
+    const templateSid = process.env["TWILIO_TEMPLATE_SID"];
+
+    if (canal === "whatsapp" && (templateSid === undefined || templateSid === "")) {
+        registrador.aviso("whatsapp_sem_template", {
+            detalhe:
+                "Sem TWILIO_TEMPLATE_SID o aviso só chega dentro da janela de 24h do cliente. Em produção, registre um template."
+        });
+    }
+
+    registrador.info("notificacao_pelo_provedor", {
+        provedor: "twilio",
+        canal,
+        comTemplate: Boolean(templateSid)
+    });
 
     return new NotificadorTwilio({
         contaSid,
         tokenDeAutenticacao,
         remetente,
         canal,
+        templateSid,
         paisPadrao: process.env["SALAO_PAIS_PADRAO"] ?? "55",
         registrador
     });

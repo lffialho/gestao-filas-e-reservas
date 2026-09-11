@@ -14,6 +14,12 @@ export interface OpcoesDoNotificadorTwilio {
     /** Número remetente. No sandbox de WhatsApp, o número da Twilio. */
     remetente: string;
     canal?: CanalTwilio | undefined;
+    /**
+     * SID (HX...) de um template aprovado. Obrigatório no WhatsApp fora da
+     * janela de 24h — ver o comentário da classe. O template precisa receber
+     * {{1}} = nome do cliente e {{2}} = número da mesa.
+     */
+    templateSid?: string | undefined;
     /** DDI assumido quando o telefone vem sem ele. 55 = Brasil. */
     paisPadrao?: string | undefined;
     /** Trocado nos testes por um servidor local. */
@@ -65,12 +71,20 @@ const TEMPO_LIMITE_PADRAO_MS = 10_000;
  * com mensagem recusada vem 201 e traz `error_code` e `error_message`.
  *
  * Há tempo limite: provedor pendurado não pode prender a operação do salão.
+ *
+ * TEXTO LIVRE OU TEMPLATE. O WhatsApp só aceita texto livre como resposta,
+ * dentro de 24h de uma mensagem do cliente. "Sua mesa está pronta" é iniciada
+ * pela empresa, então em produção exige template aprovado — informe o
+ * `templateSid` e o texto passa a vir do template, com nome e número da mesa
+ * preenchendo {{1}} e {{2}}. Sem `templateSid` vai `Body`, que serve para SMS
+ * e para testar no sandbox depois da adesão abrir a janela.
  */
 export class NotificadorTwilio implements Notificador {
     #contaSid: string;
     #autorizacao: string;
     #remetente: string;
     #canal: CanalTwilio;
+    #templateSid: string | null;
     #paisPadrao: string;
     #urlBase: string;
     #tempoLimiteMs: number;
@@ -90,6 +104,7 @@ export class NotificadorTwilio implements Notificador {
         );
         this.#remetente = opcoes.remetente;
         this.#canal = opcoes.canal ?? "sms";
+        this.#templateSid = opcoes.templateSid ?? null;
         this.#paisPadrao = opcoes.paisPadrao ?? "55";
         this.#urlBase = opcoes.urlBase ?? URL_BASE_PADRAO;
         this.#tempoLimiteMs = opcoes.tempoLimiteMs ?? TEMPO_LIMITE_PADRAO_MS;
@@ -113,9 +128,17 @@ export class NotificadorTwilio implements Notificador {
 
         const corpo = new URLSearchParams({
             To: this.#enderecar(destino),
-            From: remetente,
-            Body: this.#texto(aviso)
+            From: remetente
         });
+
+        if (this.#templateSid === null) {
+            corpo.set("Body", this.#texto(aviso));
+        } else {
+            // Template não leva Body: o texto vem do que foi aprovado, e daqui
+            // vão só os valores que preenchem os espaços dele.
+            corpo.set("ContentSid", this.#templateSid);
+            corpo.set("ContentVariables", JSON.stringify({ "1": aviso.nome, "2": String(aviso.mesaNumero) }));
+        }
 
         const url = `${this.#urlBase}/2010-04-01/Accounts/${this.#contaSid}/Messages.json`;
 
