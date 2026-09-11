@@ -26,12 +26,15 @@ export interface OpcoesDoNotificadorTwilio {
 export class FalhaNoProvedor extends Error {
     readonly status: number;
     readonly codigoDoProvedor: number | null;
+    /** Link da Twilio para a documentação do código, quando ela manda. */
+    readonly maisInfo: string | null;
 
-    constructor(mensagem: string, status: number, codigoDoProvedor: number | null) {
+    constructor(mensagem: string, status: number, codigoDoProvedor: number | null, maisInfo?: string | null) {
         super(mensagem);
         this.name = "FalhaNoProvedor";
         this.status = status;
         this.codigoDoProvedor = codigoDoProvedor;
+        this.maisInfo = maisInfo ?? null;
     }
 }
 
@@ -44,6 +47,7 @@ interface RespostaDaTwilio {
     /** Erro em nível de HTTP vem nestes campos, não nos de cima. */
     code?: number;
     message?: string;
+    more_info?: string;
 }
 
 const URL_BASE_PADRAO = "https://api.twilio.com";
@@ -137,7 +141,8 @@ export class NotificadorTwilio implements Notificador {
             throw new FalhaNoProvedor(
                 dados.message ?? `Provedor respondeu ${resposta.status}.`,
                 resposta.status,
-                dados.code ?? null
+                dados.code ?? null,
+                dados.more_info ?? null
             );
         }
 
@@ -146,7 +151,8 @@ export class NotificadorTwilio implements Notificador {
             throw new FalhaNoProvedor(
                 dados.error_message ?? `Provedor recusou a mensagem (${dados.error_code}).`,
                 resposta.status,
-                dados.error_code
+                dados.error_code,
+                dados.more_info ?? null
             );
         }
 

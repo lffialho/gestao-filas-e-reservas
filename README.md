@@ -152,6 +152,25 @@ O telefone é normalizado para E.164 na fronteira do provedor (`paraE164`), porq
 guarda telefone como texto livre — é identidade de cliente, e o anfitrião digita
 `11 98765-4321`. Número que não forma E.164 falha antes da chamada, sem gastar mensagem.
 
+#### Conferir a configuração
+
+Credenciais vêm de um `.env` local, que o git ignora. Copie o exemplo e preencha:
+
+```bash
+cp .env.example .env
+npm run build
+npm run testar:aviso -- +5511999999999
+```
+
+`testar:aviso` manda **uma** mensagem pelo provedor configurado e nada mais. Existe para
+separar dois problemas que, juntos, são difíceis de diagnosticar: *a credencial e o canal
+estão certos?* e *o fluxo do salão chama o aviso na hora certa?*. Ele responde só o primeiro,
+mascara os segredos na saída e, quando a Twilio recusa, mostra o código, a mensagem dela e o
+link da documentação do erro.
+
+Com o `.env` no lugar, `npm run start:env` sobe o serviço lendo dele — sem repetir variável
+na linha de comando.
+
 ## Arquitetura
 
 ```
@@ -205,10 +224,11 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   retaguarda; uma API pública multiusuário precisa de credencial por pessoa.
 - **O repositório em memória serializa por processo**; só o SQLite é seguro com mais de um
   processo escrevendo.
-- **A integração com a Twilio nunca foi exercitada contra a Twilio real.** A mecânica do
-  adaptador é testada contra um servidor local que imita o recurso Message — método, caminho,
-  autenticação, corpo e as duas formas de falha. O formato veio da documentação; a primeira
-  chamada de verdade ainda precisa ser feita com credencial.
+- **Um envio bem-sucedido pela Twilio ainda não foi observado.** A mecânica é testada contra
+  um servidor local que imita o recurso Message, e o caminho até a Twilio real foi exercitado
+  com credencial inválida: ela respondeu `401` com código `20003` e link de documentação, o
+  que confirma URL, autenticação e leitura da resposta. Falta a outra metade — uma credencial
+  válida entregando mensagem de verdade.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
 - Sem migrações de schema; o SQLite cria as tabelas se não existirem e nada versiona mudanças
   futuras.
