@@ -2,7 +2,7 @@
 
 Backend para atendimento de salão de restaurante **por ordem de chegada**. Não há hora
 marcada: quem chega é sentado na menor mesa que o acomoda ou entra na fila, e quando uma
-mesa vira ela vai para o primeiro da fila que couber nela — avisando o cliente.
+mesa vira ela vai para o primeiro da fila que couber nela.
 
 Sem dependências de runtime. Banco, servidor e testes usam só o que vem no Node
 (`node:sqlite`, `node:http`, `node:test`).
@@ -43,6 +43,9 @@ tipo de padrão que só se descobre errado depois; abrir tem de ser escolha decl
 ```bash
 PORTA=3131 SALAO_BANCO=./salao.db SALAO_TOKEN=segredo npm start
 ```
+
+Para não repetir variável na linha de comando, copie `.env.example` para `.env` e use
+`npm run start:env`. O `.env` fica fora do git.
 
 ## API
 
@@ -126,68 +129,21 @@ Duas regras que o `MotorGerente` já respeita: o aviso sai **depois** da transa�
 falha de aviso **não** desfaz a alocação. A mesa já é daquele cliente; provedor fora do ar não
 pode cancelar o atendimento.
 
-Sem credencial configurada, o aviso vai para o log (`NotificadorDeLog`) e o serviço anuncia
-isso na partida. Com credencial da Twilio, sai mensagem de verdade:
+O aviso vai para o **log** (`NotificadorDeLog`). Não há provedor de mensagem ligado: para
+mandar SMS, WhatsApp ou qualquer outra coisa, implemente `Notificador` e entregue a
+implementação no lugar dela — o domínio não muda, é para isso que a porta existe.
 
-| Variável | Efeito |
-| --- | --- |
-| `TWILIO_ACCOUNT_SID` | Account SID da Twilio |
-| `TWILIO_AUTH_TOKEN` | Auth Token |
-| `TWILIO_REMETENTE` | Número remetente. No sandbox de WhatsApp, o número da Twilio |
-| `TWILIO_CANAL` | `sms` (padrão) ou `whatsapp` |
-| `SALAO_PAIS_PADRAO` | DDI assumido quando o telefone vem sem ele. Padrão `55` |
+Se for ligar um provedor no Brasil, dois obstáculos que valem saber de antemão:
 
-SMS e WhatsApp saem pelo mesmo recurso da Twilio — só o prefixo de `To` e `From` muda — então
-é um adaptador só, com o canal em configuração.
-
-**Para o Brasil, prefira WhatsApp.** SMS para números brasileiros exige registro prévio de
-sender ID junto às operadoras, com documentação e carta de autorização, e
-[Sender ID alfanumérico não funciona em conta de teste](https://support.twilio.com/hc/en-us/articles/223181348-Alphanumeric-Sender-ID-for-Twilio-Programmable-SMS)
-— tráfego não registrado costuma ser filtrado pelas operadoras. Já o
-[sandbox de WhatsApp](https://www.twilio.com/docs/whatsapp/sandbox) funciona na hora, sem
-verificação de empresa junto à Meta.
-
-#### Texto livre ou template
-
-O WhatsApp trata como **iniciada pela empresa** toda mensagem que não seja resposta dentro de
-24h a uma mensagem do cliente — e exige que essas sejam
-[template pré-aprovado](https://www.twilio.com/docs/whatsapp/tutorial/send-whatsapp-notification-messages-templates).
-"Sua mesa está pronta" é exatamente isso.
-
-Na prática:
-
-- **No sandbox**, quem for receber manda o código de adesão (`join ...`) pelo WhatsApp para o
-  número do sandbox. Isso abre a janela de 24h, e durante ela o texto livre passa. É o
-  caminho para testar.
-- **Em produção**, registre um template que receba `{{1}}` = nome e `{{2}}` = número da mesa,
-  e informe o `TWILIO_TEMPLATE_SID`. Com ele configurado, o adaptador manda `ContentSid` e
-  `ContentVariables` em vez de `Body` — o texto passa a vir do template aprovado.
-
-Sem template e fora da janela, a Twilio recusa com `21654 ContentSid Required`. O serviço
-avisa isso na partida quando o canal é WhatsApp e não há template configurado.
-
-O telefone é normalizado para E.164 na fronteira do provedor (`paraE164`), porque o domínio
-guarda telefone como texto livre — é identidade de cliente, e o anfitrião digita
-`11 98765-4321`. Número que não forma E.164 falha antes da chamada, sem gastar mensagem.
-
-#### Conferir a configuração
-
-Credenciais vêm de um `.env` local, que o git ignora. Copie o exemplo e preencha:
-
-```bash
-cp .env.example .env
-npm run build
-npm run testar:aviso -- +5511999999999
-```
-
-`testar:aviso` manda **uma** mensagem pelo provedor configurado e nada mais. Existe para
-separar dois problemas que, juntos, são difíceis de diagnosticar: *a credencial e o canal
-estão certos?* e *o fluxo do salão chama o aviso na hora certa?*. Ele responde só o primeiro,
-mascara os segredos na saída e, quando a Twilio recusa, mostra o código, a mensagem dela e o
-link da documentação do erro.
-
-Com o `.env` no lugar, `npm run start:env` sobe o serviço lendo dele — sem repetir variável
-na linha de comando.
+- **SMS** para números brasileiros exige registro prévio de sender ID junto às operadoras,
+  com documentação e carta de autorização;
+  [sender alfanumérico não funciona em conta de teste](https://support.twilio.com/hc/en-us/articles/223181348-Alphanumeric-Sender-ID-for-Twilio-Programmable-SMS)
+  e tráfego não registrado costuma ser filtrado.
+- **WhatsApp** trata como iniciada pela empresa toda mensagem que não seja resposta dentro de
+  24h a uma mensagem do cliente, e exige
+  [template pré-aprovado](https://www.twilio.com/docs/whatsapp/tutorial/send-whatsapp-notification-messages-templates)
+  para essas. "Sua mesa está pronta" é exatamente esse caso, então o adaptador precisará
+  mandar o identificador do template e as variáveis, não texto livre.
 
 ## Arquitetura
 
@@ -242,11 +198,8 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   retaguarda; uma API pública multiusuário precisa de credencial por pessoa.
 - **O repositório em memória serializa por processo**; só o SQLite é seguro com mais de um
   processo escrevendo.
-- **Um envio bem-sucedido pela Twilio ainda não foi observado.** A mecânica é testada contra
-  um servidor local que imita o recurso Message, e o caminho até a Twilio real foi exercitado
-  com credencial inválida: ela respondeu `401` com código `20003` e link de documentação, o
-  que confirma URL, autenticação e leitura da resposta. Falta a outra metade — uma credencial
-  válida entregando mensagem de verdade.
+- **Não há provedor de mensagem ligado.** O aviso a quem sai da fila vai para o log; a porta
+  `Notificador` está pronta para receber uma implementação de verdade.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
 - Sem migrações de schema; o SQLite cria as tabelas se não existirem e nada versiona mudanças
   futuras.

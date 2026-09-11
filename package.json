@@ -20,7 +20,6 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "start:env": "node --env-file=.env dist/main.js",
-    "testar:aviso": "node --env-file=.env dist/ferramentas/testar-aviso.js",
     "demo": "node dist/demo.js",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },

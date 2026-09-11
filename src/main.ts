@@ -7,7 +7,6 @@ import { autenticadorAberto, autenticadorPorToken, type Autenticador } from "./h
 import { criarServidor } from "./http/servidor.js";
 import { RepositorioDoSalaoEmMemoria } from "./infra/memoria/repositorio-do-salao-em-memoria.js";
 import { NotificadorDeLog } from "./infra/notificacao/notificador-de-log.js";
-import { NotificadorTwilio } from "./infra/notificacao/notificador-twilio.js";
 import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sqlite.js";
 
 /**
@@ -93,55 +92,12 @@ function montarArmazenamento(): {
 const registrador = criarRegistradorJson({ contexto: { servico: "gestao-filas-e-reservas" } });
 
 /**
- * Com credencial da Twilio, avisa de verdade; sem ela, registra no log. O
- * padrão é o log para que desenvolvimento e teste não dependam de provedor
- * externo nem gastem mensagem.
+ * O aviso a quem sai da fila vai para o log. Para mandar mensagem de verdade,
+ * implemente `Notificador` com o provedor escolhido e entregue aqui — o
+ * domínio não muda.
  */
 function montarNotificador(): Notificador {
-    const contaSid = process.env["TWILIO_ACCOUNT_SID"];
-    const tokenDeAutenticacao = process.env["TWILIO_AUTH_TOKEN"];
-    const remetente = process.env["TWILIO_REMETENTE"];
-
-    if (
-        contaSid === undefined ||
-        tokenDeAutenticacao === undefined ||
-        remetente === undefined ||
-        contaSid === "" ||
-        tokenDeAutenticacao === "" ||
-        remetente === ""
-    ) {
-        registrador.aviso("notificacao_apenas_em_log", {
-            detalhe:
-                "Sem TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_REMETENTE: quem sai da fila não recebe mensagem."
-        });
-        return new NotificadorDeLog(registrador);
-    }
-
-    const canal = process.env["TWILIO_CANAL"] === "whatsapp" ? "whatsapp" : "sms";
-    const templateSid = process.env["TWILIO_TEMPLATE_SID"];
-
-    if (canal === "whatsapp" && (templateSid === undefined || templateSid === "")) {
-        registrador.aviso("whatsapp_sem_template", {
-            detalhe:
-                "Sem TWILIO_TEMPLATE_SID o aviso só chega dentro da janela de 24h do cliente. Em produção, registre um template."
-        });
-    }
-
-    registrador.info("notificacao_pelo_provedor", {
-        provedor: "twilio",
-        canal,
-        comTemplate: Boolean(templateSid)
-    });
-
-    return new NotificadorTwilio({
-        contaSid,
-        tokenDeAutenticacao,
-        remetente,
-        canal,
-        templateSid,
-        paisPadrao: process.env["SALAO_PAIS_PADRAO"] ?? "55",
-        registrador
-    });
+    return new NotificadorDeLog(registrador);
 }
 
 function iniciar(): void {
