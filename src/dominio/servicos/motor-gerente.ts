@@ -8,7 +8,13 @@ import type {
     ResultadoRecepcao,
     ResultadoReserva
 } from "../entidades/salao.js";
+import type { Notificador } from "../portas/notificador.js";
 import type { RepositorioDoSalao } from "../portas/repositorio-do-salao.js";
+import {
+    descreverErro,
+    registradorSilencioso,
+    type Registrador
+} from "../../compartilhado/log/registrador.js";
 
 export type {
     InfoCliente,
@@ -27,11 +33,48 @@ export type {
  * entrelaçam — o que era garantido por acidente, quando o estado morava aqui
  * dentro, agora é garantido pelo contrato do repositório.
  */
+export interface OpcoesDoMotor {
+    /** Sem notificador, quem sai da fila para a mesa não é avisado. */
+    notificador?: Notificador | undefined;
+    registrador?: Registrador | undefined;
+}
+
 export class MotorGerente {
     #repositorio: RepositorioDoSalao;
+    #notificador: Notificador | null;
+    #registrador: Registrador;
 
-    constructor(repositorio: RepositorioDoSalao) {
+    constructor(repositorio: RepositorioDoSalao, opcoes: OpcoesDoMotor = {}) {
         this.#repositorio = repositorio;
+        this.#notificador = opcoes.notificador ?? null;
+        this.#registrador = opcoes.registrador ?? registradorSilencioso;
+    }
+
+    /**
+     * Avisa quem saiu da fila para a mesa. Chamado **depois** da transação
+     * confirmar, e nunca propaga erro: a mesa já é daquele cliente, então
+     * provedor de aviso fora do ar não pode desfazer o atendimento.
+     */
+    async #avisarAtendido(resultado: ResultadoLiberacao): Promise<void> {
+        const atendido = resultado.atendido;
+        if (atendido === null || this.#notificador === null) {
+            return;
+        }
+
+        try {
+            await this.#notificador.mesaPronta({
+                nome: atendido.nome,
+                telefone: atendido.telefone,
+                mesaId: resultado.mesaId,
+                mesaNumero: resultado.mesaNumero
+            });
+        } catch (erro) {
+            this.#registrador.erro("aviso_mesa_pronta_falhou", {
+                telefone: atendido.telefone,
+                mesaId: resultado.mesaId,
+                ...descreverErro(erro)
+            });
+        }
     }
 
     async adicionarMesa(mesa: Mesa): Promise<void> {
@@ -73,7 +116,13 @@ export class MotorGerente {
         return this.#repositorio.transacao((salao) => salao.receberCliente(cliente));
     }
 
-    /** Coloca o cliente numa mesa escolhida a dedo, sem furar a fila. */
+    /**
+     * Coloca o cliente numa mesa escolhida a dedo, sem furar a fila.
+     *
+     * Não avisa ninguém de propósito: aqui é o anfitrião sentando alguém que
+     * está na sua frente. O aviso serve para quem foi embora esperar e precisa
+     * ser chamado de volta, o que acontece em liberarMesa e cancelarReserva.
+     */
     async fazerReserva(mesaId: string, cliente: Cliente): Promise<ResultadoReserva> {
         return this.#repositorio.transacao((salao) => salao.fazerReserva(mesaId, cliente));
     }
@@ -91,10 +140,14 @@ export class MotorGerente {
     }
 
     async liberarMesa(mesaId: string): Promise<ResultadoLiberacao> {
-        return this.#repositorio.transacao((salao) => salao.liberarMesa(mesaId));
+        const resultado = await this.#repositorio.transacao((salao) => salao.liberarMesa(mesaId));
+        await this.#avisarAtendido(resultado);
+        return resultado;
     }
 
     async cancelarReserva(mesaId: string): Promise<ResultadoLiberacao> {
-        return this.#repositorio.transacao((salao) => salao.cancelarReserva(mesaId));
+        const resultado = await this.#repositorio.transacao((salao) => salao.cancelarReserva(mesaId));
+        await this.#avisarAtendido(resultado);
+        return resultado;
     }
 }
