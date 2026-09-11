@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Um push novo cancela a execução anterior do mesmo ramo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 é o mínimo declarado em engines; 24 é onde se desenvolve.
+        node: ["22", "24"]
+
+    name: Node ${{ matrix.node }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # ci em vez de install: respeita o package-lock e falha se ele divergir.
+      - run: npm ci
+
+      - name: Lint e formatação
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Testes
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Prova que o serviço sobe de verdade e responde, não só que compila.
+      - name: Fumaça — servidor responde e exige token
+        run: |
+          SALAO_TOKEN=token-de-ci PORTA=3000 node dist/main.js &
+          SERVIDOR=$!
+          for tentativa in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:3000/saude > /dev/null; then break; fi
+            sleep 0.5
+          done
+
+          echo "saude responde:"
+          curl -sf http://127.0.0.1:3000/saude
+
+          echo "sem token deve dar 401:"
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/salao)
+          test "$codigo" = "401" || { echo "esperava 401, recebi $codigo"; kill $SERVIDOR; exit 1; }
+
+          echo "com token deve dar 200:"
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Authorization: Bearer token-de-ci' http://127.0.0.1:3000/salao)
+          test "$codigo" = "200" || { echo "esperava 200, recebi $codigo"; kill $SERVIDOR; exit 1; }
+
+          kill $SERVIDOR
+
+      - name: Fumaça — sem token o serviço se recusa a subir
+        run: |
+          if node dist/main.js; then
+            echo "ERRO: subiu sem SALAO_TOKEN"
+            exit 1
+          fi
+          echo "recusou subir sem token, como esperado"
