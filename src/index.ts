@@ -56,6 +56,13 @@ export {
     type OpcoesDoRepositorioSqlite
 } from "./infra/sqlite/repositorio-do-salao-sqlite.js";
 export { NotificadorDeLog } from "./infra/notificacao/notificador-de-log.js";
+export {
+    FalhaNoProvedor,
+    NotificadorTwilio,
+    type CanalTwilio,
+    type OpcoesDoNotificadorTwilio
+} from "./infra/notificacao/notificador-twilio.js";
+export { paraE164 } from "./infra/notificacao/telefone-e164.js";
 
 // HTTP
 export { criarServidor, type OpcoesDoServidor } from "./http/servidor.js";

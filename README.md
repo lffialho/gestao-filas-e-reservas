@@ -120,14 +120,37 @@ de sair à força.
 
 ### Aviso ao cliente
 
-Quando uma mesa vira e alguém sai da fila para ela, o `Notificador` é chamado. A implementação
-que vem no projeto (`NotificadorDeLog`) **registra no log em vez de enviar mensagem**: é a
-emenda para SMS ou WhatsApp, não a integração. Para ligar um provedor de verdade, implemente
-`Notificador` e entregue no lugar dela — o domínio não muda.
+Quando uma mesa vira e alguém sai da fila para ela, o `Notificador` é chamado.
 
 Duas regras que o `MotorGerente` já respeita: o aviso sai **depois** da transação confirmar, e
 falha de aviso **não** desfaz a alocação. A mesa já é daquele cliente; provedor fora do ar não
 pode cancelar o atendimento.
+
+Sem credencial configurada, o aviso vai para o log (`NotificadorDeLog`) e o serviço anuncia
+isso na partida. Com credencial da Twilio, sai mensagem de verdade:
+
+| Variável | Efeito |
+| --- | --- |
+| `TWILIO_ACCOUNT_SID` | Account SID da Twilio |
+| `TWILIO_AUTH_TOKEN` | Auth Token |
+| `TWILIO_REMETENTE` | Número remetente. No sandbox de WhatsApp, o número da Twilio |
+| `TWILIO_CANAL` | `sms` (padrão) ou `whatsapp` |
+| `SALAO_PAIS_PADRAO` | DDI assumido quando o telefone vem sem ele. Padrão `55` |
+
+SMS e WhatsApp saem pelo mesmo recurso da Twilio — só o prefixo de `To` e `From` muda — então
+é um adaptador só, com o canal em configuração.
+
+**Para o Brasil, prefira WhatsApp.** SMS para números brasileiros exige registro prévio de
+sender ID junto às operadoras, com documentação e carta de autorização, e
+[Sender ID alfanumérico não funciona em conta de teste](https://support.twilio.com/hc/en-us/articles/223181348-Alphanumeric-Sender-ID-for-Twilio-Programmable-SMS)
+— tráfego não registrado costuma ser filtrado pelas operadoras. Já o
+[sandbox de WhatsApp](https://www.twilio.com/docs/whatsapp/sandbox) funciona na hora, sem
+verificação de empresa junto à Meta. Quem for receber precisa entrar no sandbox uma vez,
+mandando o código de adesão para o número da Twilio.
+
+O telefone é normalizado para E.164 na fronteira do provedor (`paraE164`), porque o domínio
+guarda telefone como texto livre — é identidade de cliente, e o anfitrião digita
+`11 98765-4321`. Número que não forma E.164 falha antes da chamada, sem gastar mensagem.
 
 ## Arquitetura
 
@@ -182,7 +205,10 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   retaguarda; uma API pública multiusuário precisa de credencial por pessoa.
 - **O repositório em memória serializa por processo**; só o SQLite é seguro com mais de um
   processo escrevendo.
-- **O aviso ao cliente só vai para o log** — não há provedor de SMS ligado.
+- **A integração com a Twilio nunca foi exercitada contra a Twilio real.** A mecânica do
+  adaptador é testada contra um servidor local que imita o recurso Message — método, caminho,
+  autenticação, corpo e as duas formas de falha. O formato veio da documentação; a primeira
+  chamada de verdade ainda precisa ser feita com credencial.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
 - Sem migrações de schema; o SQLite cria as tabelas se não existirem e nada versiona mudanças
   futuras.
