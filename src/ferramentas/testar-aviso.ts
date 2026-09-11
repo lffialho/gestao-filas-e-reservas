@@ -30,11 +30,15 @@ function mascarar(valor: string): string {
     return `${valor.slice(0, 4)}…${valor.slice(-4)}`;
 }
 
-const destino = process.argv[2];
+// Argumento vence; sem ele, TELEFONE_DE_TESTE do .env. Assim dá para conferir
+// a configuração sem escrever o número numa linha de comando que fica no
+// histórico do shell.
+const destino = process.argv[2] ?? process.env["TELEFONE_DE_TESTE"];
 
 if (destino === undefined || destino.trim() === "") {
-    console.error("Uso: node --env-file=.env dist/ferramentas/testar-aviso.js <telefone>");
-    console.error("Exemplo: node --env-file=.env dist/ferramentas/testar-aviso.js +5511999999999");
+    console.error("Informe o telefone de destino, de uma destas formas:");
+    console.error("  · npm run testar:aviso -- +5511999999999");
+    console.error("  · ou preencha TELEFONE_DE_TESTE no .env e rode npm run testar:aviso");
     process.exit(1);
 }
 
