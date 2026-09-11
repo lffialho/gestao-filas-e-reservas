@@ -90,8 +90,8 @@ describe("RepositorioDoSalaoSqlite — durabilidade", () => {
 
             const segundo = new RepositorioDoSalaoSqlite(banco.caminho);
             try {
-                const depois = await segundo.transacao(
-                    (salao) => salao.sairDaFila("1111")?.cliente.horaChegada.toISOString()
+                const depois = await segundo.transacao((salao) =>
+                    salao.sairDaFila("1111")?.cliente.horaChegada.toISOString()
                 );
                 assert.equal(depois, horaOriginal);
             } finally {
@@ -167,9 +167,12 @@ describe("RepositorioDoSalaoSqlite — durabilidade", () => {
                 db.exec("UPDATE mesas SET status = 'RESERVADA' WHERE id = 'm1'");
                 db.close();
 
-                await assert.rejects(repositorio.transacao((salao) => salao.totalDeMesas), {
-                    name: "DadosInvalidos"
-                });
+                await assert.rejects(
+                    repositorio.transacao((salao) => salao.totalDeMesas),
+                    {
+                        name: "DadosInvalidos"
+                    }
+                );
             } finally {
                 repositorio.fechar();
             }

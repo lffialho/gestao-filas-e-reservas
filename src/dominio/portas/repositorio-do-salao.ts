@@ -1,4 +1,4 @@
-import { type Salao } from "../entidades/salao.js";
+import type { Salao } from "../entidades/salao.js";
 
 /**
  * Porta de saída do domínio: onde o salão é guardado.

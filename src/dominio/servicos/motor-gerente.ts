@@ -1,6 +1,6 @@
-import { type Cliente } from "../entidades/cliente.js";
-import { type ItemFila } from "../entidades/fila-de-espera.js";
-import { type Mesa } from "../entidades/mesa.js";
+import type { Cliente } from "../entidades/cliente.js";
+import type { ItemFila } from "../entidades/fila-de-espera.js";
+import type { Mesa } from "../entidades/mesa.js";
 import type {
     InfoMesa,
     RelatorioDoSalao,
@@ -8,7 +8,7 @@ import type {
     ResultadoRecepcao,
     ResultadoReserva
 } from "../entidades/salao.js";
-import { type RepositorioDoSalao } from "../portas/repositorio-do-salao.js";
+import type { RepositorioDoSalao } from "../portas/repositorio-do-salao.js";
 
 export type {
     InfoCliente,

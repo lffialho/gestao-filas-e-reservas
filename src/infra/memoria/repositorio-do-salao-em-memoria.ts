@@ -1,8 +1,8 @@
 import { TravaAssincrona } from "../../compartilhado/assincrono/trava-assincrona.js";
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
-import { type Mesa } from "../../dominio/entidades/mesa.js";
+import type { Mesa } from "../../dominio/entidades/mesa.js";
 import { Salao } from "../../dominio/entidades/salao.js";
-import { type RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
+import type { RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
 
 const CHAVE_SALAO = "salao";
 

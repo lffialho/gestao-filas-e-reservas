@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TravaAssincrona } from "./trava-assincrona.js";
 
-const esperar = (ms: number): Promise<void> =>
-    new Promise((resolve) => setTimeout(resolve, ms));
+const esperar = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("TravaAssincrona", () => {
     it("serializa tarefas da mesma chave, mesmo com await dentro", async () => {

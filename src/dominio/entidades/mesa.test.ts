@@ -10,8 +10,7 @@ import {
     TransicaoInvalida
 } from "../erros.js";
 
-const cliente = (nome: string, pessoas: number): Cliente =>
-    new Cliente(nome, pessoas, `tel-${nome}`);
+const cliente = (nome: string, pessoas: number): Cliente => new Cliente(nome, pessoas, `tel-${nome}`);
 
 describe("Mesa", () => {
     describe("construção", () => {

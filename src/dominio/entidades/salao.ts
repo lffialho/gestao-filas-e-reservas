@@ -1,8 +1,8 @@
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
-import { Cliente } from "./cliente.js";
+import type { Cliente } from "./cliente.js";
 import { FilaDeEspera, type ItemFila } from "./fila-de-espera.js";
 import { Mesa, StatusMesa } from "./mesa.js";
-import { type EstadoDoSalao } from "../estado.js";
+import type { EstadoDoSalao } from "../estado.js";
 import {
     CancelamentoInvalido,
     FilaTemPrioridade,
@@ -104,7 +104,10 @@ export class Salao {
 
     /** Recria o salão inteiro a partir do estado gravado. */
     static reconstituir(estado: EstadoDoSalao, relogio: Relogio = relogioDoSistema): Salao {
-        const salao = new Salao(relogio, estado.mesas.map((mesa) => Mesa.reconstituir(mesa)));
+        const salao = new Salao(
+            relogio,
+            estado.mesas.map((mesa) => Mesa.reconstituir(mesa))
+        );
         salao.#filaDeEspera = FilaDeEspera.reconstituir(estado.fila, relogio);
         return salao;
     }

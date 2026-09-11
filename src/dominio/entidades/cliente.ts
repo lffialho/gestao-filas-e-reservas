@@ -1,5 +1,5 @@
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
-import { type EstadoDoCliente } from "../estado.js";
+import type { EstadoDoCliente } from "../estado.js";
 import { DadosInvalidos } from "../erros.js";
 
 /**
@@ -64,7 +64,9 @@ export class Cliente {
         const chegada = new Date(estado.horaChegada);
 
         if (Number.isNaN(chegada.getTime())) {
-            throw new DadosInvalidos(`Hora de chegada inválida para "${estado.nome}": ${estado.horaChegada}.`);
+            throw new DadosInvalidos(
+                `Hora de chegada inválida para "${estado.nome}": ${estado.horaChegada}.`
+            );
         }
         cliente.#horaChegada = chegada;
         return cliente;

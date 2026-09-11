@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { FilaDeEspera } from "./fila-de-espera.js";
 import { Cliente } from "./cliente.js";
-import { type Relogio } from "../../compartilhado/tempo/relogio.js";
+import type { Relogio } from "../../compartilhado/tempo/relogio.js";
 import { ClienteJaNaFila, ItemForaDaFila } from "../erros.js";
 
 /** Relógio controlado: o tempo de espera é testado sem esperar de verdade. */

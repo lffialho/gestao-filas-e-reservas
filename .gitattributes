@@ -1,0 +1,12 @@
+# Fim de linha LF no repositório e na árvore de trabalho, em todo sistema.
+# Sem isto o git converte para CRLF no Windows, e formatador e diff passam a
+# discordar do que está em disco.
+* text=auto eol=lf
+
+# Binários não passam por conversão nenhuma.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.db binary

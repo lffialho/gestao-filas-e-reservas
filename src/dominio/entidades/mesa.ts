@@ -1,5 +1,5 @@
 import { Cliente } from "./cliente.js";
-import { type EstadoDaMesa } from "../estado.js";
+import type { EstadoDaMesa } from "../estado.js";
 import {
     CapacidadeInsuficiente,
     DadosInvalidos,
@@ -30,7 +30,9 @@ export class Mesa {
             throw new DadosInvalidos("O id da mesa não pode ser vazio.");
         }
         if (!Number.isInteger(numero) || numero < 1) {
-            throw new DadosInvalidos(`Número de mesa inválido: ${numero}. Informe um inteiro maior que zero.`);
+            throw new DadosInvalidos(
+                `Número de mesa inválido: ${numero}. Informe um inteiro maior que zero.`
+            );
         }
         if (!Number.isInteger(capacidade) || capacidade < 1) {
             throw new DadosInvalidos(`Capacidade inválida para a mesa "${id}": ${capacidade}.`);

@@ -1,4 +1,4 @@
-import { type StatusMesa } from "./entidades/mesa.js";
+import type { StatusMesa } from "./entidades/mesa.js";
 
 /**
  * Retrato completo e serializável do salão — o contrato entre o domínio e

@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { MotorGerente } from "./motor-gerente.js";
 import { Mesa, StatusMesa } from "../entidades/mesa.js";
 import { Cliente } from "../entidades/cliente.js";
-import { type Relogio } from "../../compartilhado/tempo/relogio.js";
+import type { Relogio } from "../../compartilhado/tempo/relogio.js";
 import { RepositorioDoSalaoEmMemoria } from "../../infra/memoria/repositorio-do-salao-em-memoria.js";
 import {
     CancelamentoInvalido,
@@ -83,11 +83,7 @@ describe("MotorGerente", () => {
             await motor.adicionarMesa(new Mesa("m1", 1, 4));
 
             await assert.rejects(motor.adicionarMesa(new Mesa("m1", 9, 2)), MesaDuplicada);
-            assert.equal(
-                (await motor.consultarMesa("m1"))?.numero,
-                1,
-                "a mesa original não foi sobrescrita"
-            );
+            assert.equal((await motor.consultarMesa("m1"))?.numero, 1, "a mesa original não foi sobrescrita");
         });
 
         it("consultarMesa devolve retrato imutável, não a entidade", async () => {
@@ -340,10 +336,7 @@ describe("MotorGerente", () => {
             await motor.entrarNaFila(cliente("Fernando", 2, "2222"));
             await motor.entrarNaFila(cliente("Carla", 2, "3333"));
 
-            const [primeira, segunda] = await Promise.all([
-                motor.liberarMesa("m1"),
-                motor.liberarMesa("m1")
-            ]);
+            const [primeira, segunda] = await Promise.all([motor.liberarMesa("m1"), motor.liberarMesa("m1")]);
 
             assert.equal(primeira.clienteAnterior.nome, "Ana");
             assert.equal(primeira.atendido?.nome, "Fernando");

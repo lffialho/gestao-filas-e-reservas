@@ -1,6 +1,6 @@
 import { Cliente } from "./cliente.js";
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
-import { type EstadoDaFila } from "../estado.js";
+import type { EstadoDaFila } from "../estado.js";
 import { ClienteJaNaFila, DadosInvalidos, ItemForaDaFila } from "../erros.js";
 
 export interface ItemFila {

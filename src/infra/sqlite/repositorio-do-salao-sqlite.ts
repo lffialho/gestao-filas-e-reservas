@@ -1,9 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
-import { type Mesa, StatusMesa } from "../../dominio/entidades/mesa.js";
+import type { Mesa, StatusMesa } from "../../dominio/entidades/mesa.js";
 import { Salao } from "../../dominio/entidades/salao.js";
 import type { EstadoDaMesa, EstadoDoItemFila, EstadoDoSalao } from "../../dominio/estado.js";
-import { type RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
+import type { RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
 
 const ESQUEMA = `
 CREATE TABLE IF NOT EXISTS mesas (
@@ -102,7 +102,10 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
                 total: number;
             };
             if (total === 0) {
-                this.#gravar({ mesas: mesas.map((mesa) => mesa.estado()), fila: { itens: [], esperasEmSegundos: [] } });
+                this.#gravar({
+                    mesas: mesas.map((mesa) => mesa.estado()),
+                    fila: { itens: [], esperasEmSegundos: [] }
+                });
             }
             this.#db.exec("COMMIT");
         } catch (erro) {

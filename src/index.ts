@@ -2,7 +2,7 @@ import { Mesa } from "./dominio/entidades/mesa.js";
 import { Cliente } from "./dominio/entidades/cliente.js";
 import { MotorGerente } from "./dominio/servicos/motor-gerente.js";
 import { ErroDeDominio } from "./dominio/erros.js";
-import { type RepositorioDoSalao } from "./dominio/portas/repositorio-do-salao.js";
+import type { RepositorioDoSalao } from "./dominio/portas/repositorio-do-salao.js";
 import { RepositorioDoSalaoEmMemoria } from "./infra/memoria/repositorio-do-salao-em-memoria.js";
 import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sqlite.js";
 

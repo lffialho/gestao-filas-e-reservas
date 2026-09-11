@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Cliente } from "../entidades/cliente.js";
 import { Mesa, StatusMesa } from "../entidades/mesa.js";
-import { type Relogio } from "../../compartilhado/tempo/relogio.js";
-import { type RepositorioDoSalao } from "./repositorio-do-salao.js";
+import type { Relogio } from "../../compartilhado/tempo/relogio.js";
+import type { RepositorioDoSalao } from "./repositorio-do-salao.js";
 
 export interface RepositorioParaTeste {
     repositorio: RepositorioDoSalao;
@@ -193,9 +193,11 @@ export function verificarContratoDoRepositorio(
         it("uma transação que falha não impede as seguintes", async () => {
             const { repositorio, fechar } = criar({ mesas: duasMesas() });
             try {
-                await assert.rejects(repositorio.transacao(() => {
-                    throw new Error("boom");
-                }));
+                await assert.rejects(
+                    repositorio.transacao(() => {
+                        throw new Error("boom");
+                    })
+                );
 
                 const total = await repositorio.transacao((salao) => salao.totalDeMesas);
                 assert.equal(total, 2, "o repositório continua usável");

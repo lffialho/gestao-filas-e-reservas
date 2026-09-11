@@ -12,10 +12,7 @@ export class TravaAssincrona {
         this.#bloqueios = new Map();
     }
 
-    async executarComExclusividade<T>(
-        chave: string,
-        tarefa: () => Promise<T> | T
-    ): Promise<T> {
+    async executarComExclusividade<T>(chave: string, tarefa: () => Promise<T> | T): Promise<T> {
         const bloqueioAtual = this.#bloqueios.get(chave) ?? Promise.resolve();
 
         let liberarProximo!: () => void;
