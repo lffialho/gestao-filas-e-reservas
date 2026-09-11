@@ -27,6 +27,20 @@ SALAO_TOKEN=um-token-secreto npm start
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
 
+### Simulação do salão
+
+Com o serviço de pé, abra `http://localhost:3000` no navegador. Há uma simulação do salão em
+vista isométrica: **arraste as mesas** para reorganizar a planta, receba clientes pelo painel
+e acompanhe fila, ocupação e tempo médio de espera.
+
+A tela não tem regra de negócio nenhuma — ela conversa com a mesma API HTTP que qualquer
+outro cliente usaria. Quem decide onde o cliente senta é o servidor; arrastar uma mesa é um
+`POST /mesas/:id/posicao`, e se o servidor recusar (ladrilho ocupado, fora da planta) a mesa
+volta para onde estava, porque a verdade é dele.
+
+A página pede o `SALAO_TOKEN` na primeira vez e o guarda só naquela aba. Para não servir a
+interface, use `SALAO_INTERFACE=0`.
+
 ### Configuração
 
 | Variável | Padrão | Efeito |
@@ -35,6 +49,7 @@ SALAO_TOKEN=um-token-secreto npm start
 | `SALAO_TOKEN` | — | Token da equipe, exigido em toda rota menos `/saude` |
 | `SALAO_SEM_AUTENTICACAO` | — | `1` abre a API. Só para desenvolvimento |
 | `SALAO_BANCO` | — | Caminho de um arquivo SQLite. Sem ela o salão fica em memória e é perdido ao encerrar |
+| `SALAO_INTERFACE` | — | `0` não serve a simulação, só a API |
 
 **O serviço não sobe sem `SALAO_TOKEN`.** Uma API que opera o salão aberta por omissão é o
 tipo de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
@@ -64,6 +79,8 @@ para health check.
 | `DELETE` | `/mesas/:id/reserva` | Cancela a reserva; a mesa vai para o próximo da fila que couber |
 | `POST` | `/mesas/:id/ocupacao` | O grupo chegou à mesa e sentou |
 | `POST` | `/mesas/:id/liberacao` | O grupo foi embora; a mesa vai para o próximo da fila que couber |
+| `GET` | `/fila` | Quem está esperando, na ordem de chegada |
+| `POST` | `/mesas/:id/posicao` | Arrasta a mesa na planta — `{ coluna, linha }` |
 
 `POST /chegadas` é a porta de entrada normal. `POST /mesas/:id/reserva` existe para o
 anfitrião escolher a mesa, e **continua respeitando a ordem de chegada**: se alguém na fila
@@ -99,7 +116,7 @@ trate por ele, não pela mensagem. Campos extras vêm conforme o erro: `mesaId`,
 | `404` | Recurso não existe | `MesaNaoEncontrada`, `ClienteNaoEstaNaFila` |
 | `405` | Método não aceito no recurso | `MetodoNaoPermitido` |
 | `409` | Conflita com o estado atual do salão | `MesaIndisponivel`, `MesaJaDisponivel`, `FilaTemPrioridade`, `CapacidadeInsuficiente`, `ClienteJaNaFila` |
-| `422` | Coerente, mas este salão nunca pode atender | `GrupoSemMesaPossivel` |
+| `422` | Coerente, mas este salão nunca pode atender | `GrupoSemMesaPossivel`, `PosicaoForaDaPlanta`, `SalaoSemEspaco` |
 
 A diferença entre `409` e `422` é proposital: pedir uma mesa de 2 para um grupo de 4 conflita
 com *aquela* mesa (`409`, outra mesa pode servir); um grupo de 50 num salão cuja maior mesa
@@ -150,7 +167,7 @@ Se for ligar um provedor no Brasil, dois obstáculos que valem saber de antemão
 ```
 src/
   dominio/
-    entidades/     Cliente, Mesa, FilaDeEspera, Salao
+    entidades/     Cliente, Mesa, FilaDeEspera, Salao, planta
     portas/        RepositorioDoSalao, Notificador
     servicos/      MotorGerente — serviço de aplicação, sem estado
     erros.ts       erros tipados; o chamador decide por instanceof
@@ -159,14 +176,20 @@ src/
     memoria/       repositório em memória
     sqlite/        repositório em SQLite (node:sqlite)
     notificacao/   notificador que registra no log
-  http/            servidor, rotas, autenticação, erro → status
+  http/            servidor, rotas, autenticação, estáticos, erro → status
+publico/           simulação do salão (HTML, CSS e canvas, sem build)
   compartilhado/   trava assíncrona, relógio injetável, log estruturado
   main.ts          ponto de entrada do serviço
   demo.ts          roteiro de demonstração
   index.ts         superfície pública do pacote (só reexporta)
 ```
 
-Três decisões explicam o resto:
+Quatro decisões explicam o resto:
+
+**Posição é planta, não regra.** Mesa tem lugar no salão porque estabelecimento real tem
+disposição de mesas, e quem opera precisa reconhecer "a mesa do canto". Mas nenhuma regra de
+alocação usa posição: quem senta onde continua sendo decidido por capacidade e ordem de
+chegada. Há teste fixando isso — a mesa pequena no fundo vence a grande na entrada.
 
 **O agregado é o salão, não a mesa.** Mesas e fila precisam mudar juntas para continuarem
 coerentes — dar uma mesa a alguém é, no mesmo instante, tirá-lo da fila. Por isso a

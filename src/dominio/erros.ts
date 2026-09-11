@@ -126,6 +126,34 @@ export class GrupoSemMesaPossivel extends ErroDeDominio {
     }
 }
 
+export class PosicaoForaDaPlanta extends ErroDeDominio {
+    readonly coluna: number;
+    readonly linha: number;
+
+    constructor(coluna: number, linha: number, colunas: number, linhas: number) {
+        super(`Posição (${coluna}, ${linha}) está fora da planta, que tem ${colunas} por ${linhas}.`);
+        this.coluna = coluna;
+        this.linha = linha;
+    }
+}
+
+export class PosicaoOcupada extends ErroDeDominio {
+    readonly mesaId: string;
+    readonly ocupadaPor: string;
+
+    constructor(mesaId: string, ocupadaPor: string) {
+        super(`Não dá para pôr a mesa "${mesaId}" aí: a mesa "${ocupadaPor}" já está nesse lugar.`);
+        this.mesaId = mesaId;
+        this.ocupadaPor = ocupadaPor;
+    }
+}
+
+export class SalaoSemEspaco extends ErroDeDominio {
+    constructor() {
+        super("Não há ladrilho livre na planta para mais uma mesa.");
+    }
+}
+
 export class ItemForaDaFila extends ErroDeDominio {
     constructor() {
         super("Este item não está mais na fila de espera.");

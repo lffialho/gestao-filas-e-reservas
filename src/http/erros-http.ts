@@ -11,6 +11,9 @@ import {
     MesaIndisponivel,
     MesaJaDisponivel,
     MesaNaoEncontrada,
+    PosicaoForaDaPlanta,
+    PosicaoOcupada,
+    SalaoSemEspaco,
     TransicaoInvalida
 } from "../dominio/erros.js";
 
@@ -38,6 +41,12 @@ const STATUS_POR_ERRO: ReadonlyArray<readonly [new (...args: never[]) => ErroDeD
     [FilaTemPrioridade, 409],
     [ItemForaDaFila, 409],
     [CapacidadeInsuficiente, 409],
+    [PosicaoOcupada, 409],
+
+    // Ladrilho fora da planta e planta lotada sao pedidos que esta planta
+    // nunca atende, como o grupo grande demais.
+    [PosicaoForaDaPlanta, 422],
+    [SalaoSemEspaco, 422],
 
     // Nenhuma mesa do salão acomoda o grupo: esperar não resolveria.
     [GrupoSemMesaPossivel, 422]

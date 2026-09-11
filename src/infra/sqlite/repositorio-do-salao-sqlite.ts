@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS mesas (
     cliente_nome      TEXT,
     cliente_telefone  TEXT,
     cliente_pessoas   INTEGER,
-    cliente_chegada   TEXT
+    cliente_chegada   TEXT,
+    coluna            INTEGER,
+    linha             INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS fila (
@@ -42,6 +44,8 @@ interface LinhaMesa {
     cliente_telefone: string | null;
     cliente_pessoas: number | null;
     cliente_chegada: string | null;
+    coluna: number | null;
+    linha: number | null;
 }
 
 interface LinhaFila {
@@ -138,6 +142,10 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
             numero: linha.numero,
             capacidade: linha.capacidade,
             status: linha.status as StatusMesa,
+            posicao:
+                linha.coluna === null || linha.linha === null
+                    ? null
+                    : { coluna: linha.coluna, linha: linha.linha },
             cliente:
                 linha.cliente_nome === null ||
                 linha.cliente_telefone === null ||
@@ -181,8 +189,9 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
 
         const inserirMesa = this.#db.prepare(
             `INSERT INTO mesas
-                (id, numero, capacidade, status, cliente_nome, cliente_telefone, cliente_pessoas, cliente_chegada)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+                (id, numero, capacidade, status, cliente_nome, cliente_telefone, cliente_pessoas,
+                 cliente_chegada, coluna, linha)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         );
         for (const mesa of estado.mesas) {
             inserirMesa.run(
@@ -193,7 +202,9 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
                 mesa.cliente?.nome ?? null,
                 mesa.cliente?.telefone ?? null,
                 mesa.cliente?.quantidadePessoas ?? null,
-                mesa.cliente?.horaChegada ?? null
+                mesa.cliente?.horaChegada ?? null,
+                mesa.posicao?.coluna ?? null,
+                mesa.posicao?.linha ?? null
             );
         }
 

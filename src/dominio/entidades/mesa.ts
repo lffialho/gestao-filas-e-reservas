@@ -1,10 +1,12 @@
 import { Cliente } from "./cliente.js";
 import type { EstadoDaMesa } from "../estado.js";
+import { COLUNAS_DA_PLANTA, dentroDaPlanta, LINHAS_DA_PLANTA, type Posicao } from "./planta.js";
 import {
     CapacidadeInsuficiente,
     DadosInvalidos,
     MesaIndisponivel,
     MesaJaDisponivel,
+    PosicaoForaDaPlanta,
     TransicaoInvalida
 } from "../erros.js";
 
@@ -24,8 +26,9 @@ export class Mesa {
     #capacidade: number;
     #status: StatusMesa;
     #clienteAtual: Cliente | null;
+    #posicao: Posicao | null;
 
-    constructor(id: string, numero: number, capacidade: number) {
+    constructor(id: string, numero: number, capacidade: number, posicao?: Posicao) {
         if (id.trim() === "") {
             throw new DadosInvalidos("O id da mesa não pode ser vazio.");
         }
@@ -43,6 +46,11 @@ export class Mesa {
         this.#capacidade = capacidade;
         this.#status = StatusMesa.DISPONIVEL;
         this.#clienteAtual = null;
+        this.#posicao = null;
+
+        if (posicao !== undefined) {
+            this.moverPara(posicao);
+        }
     }
 
     get id(): string {
@@ -63,6 +71,22 @@ export class Mesa {
 
     get clienteAtual(): Cliente | null {
         return this.#clienteAtual;
+    }
+
+    /** Onde a mesa está na planta. `null` até o salão a colocar. */
+    get posicao(): Posicao | null {
+        return this.#posicao === null ? null : { ...this.#posicao };
+    }
+
+    /**
+     * Põe a mesa num ladrilho. Valida os limites da planta; garantir que o
+     * ladrilho está livre é do salão, que é quem conhece as outras mesas.
+     */
+    moverPara(posicao: Posicao): void {
+        if (!dentroDaPlanta(posicao)) {
+            throw new PosicaoForaDaPlanta(posicao.coluna, posicao.linha, COLUNAS_DA_PLANTA, LINHAS_DA_PLANTA);
+        }
+        this.#posicao = { coluna: posicao.coluna, linha: posicao.linha };
     }
 
     get estaDisponivel(): boolean {
@@ -101,6 +125,9 @@ export class Mesa {
      */
     static reconstituir(estado: EstadoDaMesa): Mesa {
         const mesa = new Mesa(estado.id, estado.numero, estado.capacidade);
+        if (estado.posicao !== null) {
+            mesa.moverPara(estado.posicao);
+        }
 
         if (!Object.values(StatusMesa).includes(estado.status)) {
             throw new DadosInvalidos(`Status desconhecido para a mesa "${estado.id}": ${estado.status}.`);
@@ -126,7 +153,8 @@ export class Mesa {
             numero: this.#numero,
             capacidade: this.#capacidade,
             status: this.#status,
-            cliente: this.#clienteAtual === null ? null : this.#clienteAtual.estado()
+            cliente: this.#clienteAtual === null ? null : this.#clienteAtual.estado(),
+            posicao: this.posicao
         };
     }
 

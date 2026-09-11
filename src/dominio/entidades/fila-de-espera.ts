@@ -79,6 +79,11 @@ export class FilaDeEspera {
         return this.#clientes.length;
     }
 
+    /** Cópia dos itens, na ordem de chegada. Para leitura. */
+    itens(): ItemFila[] {
+        return this.#clientes.map((item) => ({ ...item }));
+    }
+
     estaVazia(): boolean {
         return this.#clientes.length === 0;
     }

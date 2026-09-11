@@ -1,4 +1,5 @@
 import type { StatusMesa } from "./entidades/mesa.js";
+import type { Posicao } from "./entidades/planta.js";
 
 /**
  * Retrato completo e serializável do salão — o contrato entre o domínio e
@@ -23,6 +24,8 @@ export interface EstadoDaMesa {
     status: StatusMesa;
     /** Obrigatório quando a mesa não está disponível, proibido quando está. */
     cliente: EstadoDoCliente | null;
+    /** Ladrilho da planta. `null` só antes de o salão colocar a mesa. */
+    posicao: Posicao | null;
 }
 
 export interface EstadoDoItemFila {

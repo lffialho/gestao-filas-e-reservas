@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salão — simulação</title>
+<link rel="stylesheet" href="/estilo.css">
+</head>
+<body>
+
+<header class="topo">
+    <h1>Salão</h1>
+    <div class="indicadores">
+        <span class="indicador"><b id="ind-ocupacao">0%</b><small>ocupação</small></span>
+        <span class="indicador"><b id="ind-fila">0</b><small>na fila</small></span>
+        <span class="indicador"><b id="ind-espera">0s</b><small>espera média</small></span>
+    </div>
+    <div class="conexao" id="conexao" data-estado="ligando"><i></i><span>ligando…</span></div>
+</header>
+
+<main>
+    <section class="palco">
+        <canvas id="salao" width="960" height="620"></canvas>
+        <p class="dica">Arraste as mesas para reorganizar o salão. Clique numa mesa para agir sobre ela.</p>
+    </section>
+
+    <aside class="painel">
+        <section class="bloco">
+            <h2>Chegou alguém</h2>
+            <form id="form-chegada" autocomplete="off">
+                <label>Nome <input id="chegada-nome" required maxlength="40" placeholder="Ana e Bruno"></label>
+                <div class="dupla">
+                    <label>Pessoas <input id="chegada-pessoas" type="number" min="1" max="20" value="2" required></label>
+                    <label>Telefone <input id="chegada-telefone" required maxlength="20" placeholder="4899..."></label>
+                </div>
+                <button type="submit">Receber no salão</button>
+            </form>
+            <p class="rodape-bloco">O salão decide: menor mesa que serve, ou fila por ordem de chegada.</p>
+        </section>
+
+        <section class="bloco">
+            <h2>Fila de espera <span class="contador" id="fila-contador">0</span></h2>
+            <ol class="fila" id="fila"></ol>
+        </section>
+
+        <section class="bloco">
+            <h2>Mesa selecionada</h2>
+            <div id="detalhe-mesa" class="detalhe vazio">Nenhuma mesa selecionada.</div>
+            <div class="acoes" id="acoes-mesa"></div>
+        </section>
+
+        <section class="bloco">
+            <h2>Nova mesa</h2>
+            <form id="form-mesa" autocomplete="off">
+                <div class="dupla">
+                    <label>Número <input id="mesa-numero" type="number" min="1" value="6" required></label>
+                    <label>Lugares <input id="mesa-capacidade" type="number" min="1" max="20" value="4" required></label>
+                </div>
+                <button type="submit" class="secundario">Adicionar ao salão</button>
+            </form>
+        </section>
+    </aside>
+</main>
+
+<div id="aviso" class="aviso" hidden></div>
+
+<div id="portao" class="portao" hidden>
+    <form id="form-token">
+        <h2>Token da equipe</h2>
+        <p>A API exige autenticação. Informe o <code>SALAO_TOKEN</code> com que o serviço subiu.</p>
+        <input id="campo-token" type="password" autocomplete="off" placeholder="token">
+        <button type="submit">Entrar</button>
+        <small>Fica guardado só nesta aba.</small>
+    </form>
+</div>
+
+<script src="/simulacao.js"></script>
+</body>
+</html>

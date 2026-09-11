@@ -2,13 +2,16 @@ import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogi
 import type { Cliente } from "./cliente.js";
 import { FilaDeEspera, type ItemFila } from "./fila-de-espera.js";
 import { Mesa, StatusMesa } from "./mesa.js";
+import { COLUNAS_DA_PLANTA, LINHAS_DA_PLANTA, mesmaPosicao, type Posicao } from "./planta.js";
 import type { EstadoDoSalao } from "../estado.js";
 import {
     CancelamentoInvalido,
     FilaTemPrioridade,
     GrupoSemMesaPossivel,
     MesaDuplicada,
-    MesaNaoEncontrada
+    MesaNaoEncontrada,
+    PosicaoOcupada,
+    SalaoSemEspaco
 } from "../erros.js";
 
 /** Retrato imutável de uma mesa, para leitura fora do domínio. */
@@ -18,6 +21,7 @@ export interface InfoMesa {
     capacidade: number;
     status: StatusMesa;
     cliente: InfoCliente | null;
+    posicao: Posicao | null;
 }
 
 export interface InfoCliente {
@@ -63,6 +67,7 @@ function retratar(mesa: Mesa): InfoMesa {
         numero: mesa.numero,
         capacidade: mesa.capacidade,
         status: mesa.status,
+        posicao: mesa.posicao,
         cliente:
             cliente === null
                 ? null
@@ -95,11 +100,60 @@ export class Salao {
         }
     }
 
+    /**
+     * Cadastra a mesa. Sem posição declarada, ela recebe o primeiro ladrilho
+     * livre — assim nenhum salão fica com mesa sem lugar na planta.
+     */
     adicionarMesa(mesa: Mesa): void {
         if (this.#mesas.has(mesa.id)) {
             throw new MesaDuplicada(mesa.id);
         }
+
+        const desejada = mesa.posicao;
+        if (desejada === null) {
+            mesa.moverPara(this.#primeiroLadrilhoLivre());
+        } else {
+            const ocupante = this.#mesaEm(desejada, mesa.id);
+            if (ocupante !== null) {
+                throw new PosicaoOcupada(mesa.id, ocupante.id);
+            }
+        }
+
         this.#mesas.set(mesa.id, mesa);
+    }
+
+    /** Arrasta a mesa para outro ladrilho. */
+    moverMesa(mesaId: string, posicao: Posicao): InfoMesa {
+        const mesa = this.#obterMesa(mesaId);
+        const ocupante = this.#mesaEm(posicao, mesaId);
+
+        if (ocupante !== null) {
+            throw new PosicaoOcupada(mesaId, ocupante.id);
+        }
+
+        mesa.moverPara(posicao);
+        return retratar(mesa);
+    }
+
+    #mesaEm(posicao: Posicao, ignorandoId: string): Mesa | null {
+        for (const mesa of this.#mesas.values()) {
+            const dela = mesa.posicao;
+            if (mesa.id !== ignorandoId && dela !== null && mesmaPosicao(dela, posicao)) {
+                return mesa;
+            }
+        }
+        return null;
+    }
+
+    #primeiroLadrilhoLivre(): Posicao {
+        for (let linha = 0; linha < LINHAS_DA_PLANTA; linha++) {
+            for (let coluna = 0; coluna < COLUNAS_DA_PLANTA; coluna++) {
+                if (this.#mesaEm({ coluna, linha }, "") === null) {
+                    return { coluna, linha };
+                }
+            }
+        }
+        throw new SalaoSemEspaco();
     }
 
     /** Recria o salão inteiro a partir do estado gravado. */
@@ -162,6 +216,11 @@ export class Salao {
         const indisponiveis = Array.from(this.#mesas.values()).filter((mesa) => !mesa.estaDisponivel).length;
 
         return Math.round((indisponiveis / this.#mesas.size) * 100);
+    }
+
+    /** Quem está esperando, na ordem de chegada. */
+    fila(): ItemFila[] {
+        return this.#filaDeEspera.itens();
     }
 
     relatorio(): RelatorioDoSalao {

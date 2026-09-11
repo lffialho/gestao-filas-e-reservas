@@ -5,6 +5,8 @@ import type { RepositorioDoSalao } from "./dominio/portas/repositorio-do-salao.j
 import { MotorGerente } from "./dominio/servicos/motor-gerente.js";
 import { autenticadorAberto, autenticadorPorToken, type Autenticador } from "./http/autenticacao.js";
 import { criarServidor } from "./http/servidor.js";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { RepositorioDoSalaoEmMemoria } from "./infra/memoria/repositorio-do-salao-em-memoria.js";
 import { NotificadorDeLog } from "./infra/notificacao/notificador-de-log.js";
 import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sqlite.js";
@@ -18,6 +20,7 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_BANCO           | —      | Arquivo SQLite; sem ela, salão em memória       |
  * | SALAO_TOKEN           | —      | Token da equipe, exigido em toda rota menos /saude |
  * | SALAO_SEM_AUTENTICACAO| —      | "1" abre a API; só para desenvolvimento         |
+ * | SALAO_INTERFACE       | —      | "0" não serve a interface, só a API             |
  */
 
 const MESAS_DE_ABERTURA = (): Mesa[] => [
@@ -107,7 +110,14 @@ function iniciar(): void {
     const notificador = montarNotificador();
 
     const motor = new MotorGerente(armazenamento.repositorio, { notificador, registrador });
-    const servidor = criarServidor(motor, { autenticador, registrador });
+
+    // A interface fica fora de dist/: e arquivo estatico, nao codigo compilado.
+    const pastaDaInterface =
+        process.env["SALAO_INTERFACE"] === "0"
+            ? undefined
+            : join(dirname(fileURLToPath(import.meta.url)), "..", "publico");
+
+    const servidor = criarServidor(motor, { autenticador, registrador, pastaDaInterface });
 
     servidor.listen(porta, () => {
         const endereco = servidor.address();

@@ -1,6 +1,7 @@
 import type { Cliente } from "../entidades/cliente.js";
 import type { ItemFila } from "../entidades/fila-de-espera.js";
 import type { Mesa } from "../entidades/mesa.js";
+import type { Posicao } from "../entidades/planta.js";
 import type {
     InfoMesa,
     RelatorioDoSalao,
@@ -107,6 +108,10 @@ export class MotorGerente {
         return this.#repositorio.transacao((salao) => salao.taxaDeOcupacao);
     }
 
+    async consultarFila(): Promise<ItemFila[]> {
+        return this.#repositorio.transacao((salao) => salao.fila());
+    }
+
     async gerarRelatorio(): Promise<RelatorioDoSalao> {
         return this.#repositorio.transacao((salao) => salao.relatorio());
     }
@@ -125,6 +130,11 @@ export class MotorGerente {
      */
     async fazerReserva(mesaId: string, cliente: Cliente): Promise<ResultadoReserva> {
         return this.#repositorio.transacao((salao) => salao.fazerReserva(mesaId, cliente));
+    }
+
+    /** Arrasta a mesa para outro ladrilho da planta. */
+    async moverMesa(mesaId: string, posicao: Posicao): Promise<InfoMesa> {
+        return this.#repositorio.transacao((salao) => salao.moverMesa(mesaId, posicao));
     }
 
     async ocuparMesa(mesaId: string): Promise<InfoMesa> {

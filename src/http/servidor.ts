@@ -5,8 +5,9 @@ import { DadosInvalidos } from "../dominio/erros.js";
 import type { MotorGerente } from "../dominio/servicos/motor-gerente.js";
 import { descreverErro, registradorSilencioso, type Registrador } from "../compartilhado/log/registrador.js";
 import { autenticadorAberto, type Autenticador } from "./autenticacao.js";
+import { ServidorDeEstaticos } from "./estaticos.js";
 import { traduzirErro } from "./erros-http.js";
-import { liberacaoJson, recepcaoJson, reservaJson } from "./representacoes.js";
+import { itemFilaJson, liberacaoJson, recepcaoJson, reservaJson } from "./representacoes.js";
 
 /** Teto do corpo da requisição: sem isso um cliente pode esgotar a memória. */
 const LIMITE_DO_CORPO_EM_BYTES = 64 * 1024;
@@ -76,6 +77,11 @@ function rotas(motor: MotorGerente): Rota[] {
             corpo: await motor.gerarRelatorio()
         })),
 
+        rota("GET", "/fila", async () => ({
+            status: 200,
+            corpo: { itens: (await motor.consultarFila()).map(itemFilaJson) }
+        })),
+
         rota("POST", "/mesas", async ({ corpo }) => {
             const mesa = new Mesa(texto(corpo, "id"), inteiro(corpo, "numero"), inteiro(corpo, "capacidade"));
             await motor.adicionarMesa(mesa);
@@ -125,6 +131,15 @@ function rotas(motor: MotorGerente): Rota[] {
         rota("DELETE", "/mesas/:id/reserva", async ({ parametros }) => ({
             status: 200,
             corpo: liberacaoJson(await motor.cancelarReserva(parametros["id"] ?? ""))
+        })),
+
+        /** Arrasta a mesa na planta. Não mexe em status nem em ocupante. */
+        rota("POST", "/mesas/:id/posicao", async ({ parametros, corpo }) => ({
+            status: 200,
+            corpo: await motor.moverMesa(parametros["id"] ?? "", {
+                coluna: inteiro(corpo, "coluna"),
+                linha: inteiro(corpo, "linha")
+            })
         })),
 
         /** O grupo chegou à mesa e sentou. */
@@ -241,6 +256,30 @@ export interface OpcoesDoServidor {
     /** Sem autenticador, a API fica aberta — só para desenvolvimento. */
     autenticador?: Autenticador | undefined;
     registrador?: Registrador | undefined;
+    /** Pasta com a interface. Sem ela, o servidor só atende a API. */
+    pastaDaInterface?: string | undefined;
+}
+
+/**
+ * A interface vem antes da API, mas nunca na frente dela: só se tenta servir
+ * arquivo quando o caminho não casa com rota conhecida. Assim `/salao` é
+ * sempre a API, mesmo que exista um arquivo com esse nome na pasta.
+ */
+async function serviuInterface(
+    estaticos: ServidorDeEstaticos | null,
+    todas: readonly Rota[],
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    metodo: string,
+    caminho: string
+): Promise<boolean> {
+    if (estaticos === null) {
+        return false;
+    }
+    if (casar(todas, metodo, segmentosDe(caminho)).casamento !== null) {
+        return false;
+    }
+    return estaticos.tentarServir(requisicao, resposta, caminho);
 }
 
 interface RespostaComCabecalhos extends Resposta {
@@ -259,9 +298,13 @@ interface PedidoADespachar {
  * Decide o que responder: roteia, autentica, lê o corpo e chama a rota.
  * Separado do manipulador para que este cuide só de E/S e de erro.
  */
+function segmentosDe(caminho: string): string[] {
+    return caminho.split("/").filter((s) => s !== "");
+}
+
 async function despachar(pedido: PedidoADespachar): Promise<RespostaComCabecalhos> {
     const { todas, autenticador, requisicao, metodo, caminho } = pedido;
-    const segmentos = caminho.split("/").filter((s) => s !== "");
+    const segmentos = segmentosDe(caminho);
 
     const { casamento, caminhoExiste, metodosAceitos } = casar(todas, metodo, segmentos);
 
@@ -308,6 +351,8 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
     const todas = rotas(motor);
     const autenticador = opcoes.autenticador ?? autenticadorAberto;
     const registrador = opcoes.registrador ?? registradorSilencioso;
+    const estaticos =
+        opcoes.pastaDaInterface === undefined ? null : new ServidorDeEstaticos(opcoes.pastaDaInterface);
 
     return createServer((requisicao, resposta) => {
         const comecou = process.hrtime.bigint();
@@ -328,6 +373,10 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
             try {
                 const url = new URL(requisicao.url ?? "/", "http://local");
                 caminhoRegistrado = url.pathname;
+
+                if (await serviuInterface(estaticos, todas, requisicao, resposta, metodo, url.pathname)) {
+                    return;
+                }
 
                 const resultado = await despachar({
                     todas,
