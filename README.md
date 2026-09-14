@@ -45,7 +45,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 296 testes |
+| `npm test` | 312 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -77,9 +77,23 @@ outra** deixa o painel batendo numa porta vazia: ele sobe, a tela abre e nada ca
 `npm run tudo` confere isso antes de subir e recusa com a mensagem certa; `npm start` e
 `npm run web`, rodados separados, não têm como conferir.
 
-Bancos criados por versões anteriores são atualizados sozinhos na primeira
-abertura: a tabela `esperas`, que guardava uma linha por atendimento, vira um
-resumo de uma linha só, com o mesmo tempo médio.
+### Migrações
+
+Bancos de versões anteriores se atualizam sozinhos ao abrir. As mudanças de esquema são
+numeradas em `src/infra/sqlite/migracoes.ts` e aplicadas em ordem, uma transação cada; o
+número já aplicado mora em `PRAGMA user_version`, no cabeçalho do próprio arquivo.
+
+Isto existe por causa da venda: **a partir da primeira instalação não se controla mais qual
+versão roda em cada casa**, e uma casa que passe meses sem atualizar recebe várias mudanças
+de uma vez. Adivinhar pelo formato do banco — que era o que se fazia aqui — não passa de duas
+ou três mudanças.
+
+Se uma migração falhar no meio, nada dela vale e a versão não sobe; as anteriores continuam
+valendo, e abrir de novo retoma de onde parou.
+
+**Banco mais novo que o programa é recusado, com o motivo escrito.** Voltar uma versão é
+justamente o que se faz quando uma atualização dá problema, e nesse momento o banco já tem o
+formato novo: seguir em frente seria gravar por cima com o formato antigo.
 
 **O serviço não sobe sem `SALAO_TOKEN`.** Uma API que opera o salão aberta por omissão é o
 tipo de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
@@ -586,8 +600,9 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
 - **O diário só cresce.** Não há expurgo nem arquivamento: um salão movimentado acumula
   eventos para sempre. A consulta é indexada por momento, então a leitura de um período não
   degrada, mas o arquivo sim.
-- Sem migrações versionadas. Há duas migrações pontuais — a tabela `esperas` antiga virando
-  resumo, e a coluna `desde` das mesas —, mas não um mecanismo geral para mudanças futuras.
+- **Não há como voltar uma migração.** O caminho é só para a frente; para desfazer, restaure uma
+  cópia anterior à atualização. É escolha: migração reversa é código que quase nunca roda e
+  quase nunca está certo quando roda, e aqui existe uma restauração testada.
 - **O painel atualiza por polling**, quatro leituras a cada três segundos. Numa casa e num
   painel só isso é irrelevante; com muitos painéis abertos, o caminho é o servidor do painel
   empurrar as mudanças em vez de cada aba perguntar.

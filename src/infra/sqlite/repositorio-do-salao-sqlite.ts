@@ -5,55 +5,7 @@ import { Salao } from "../../dominio/entidades/salao.js";
 import type { EstadoDaMesa, EstadoDoItemFila, EstadoDoSalao } from "../../dominio/estado.js";
 import type { EventoDoSalao, Periodo, TipoDeEvento } from "../../dominio/eventos.js";
 import type { RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
-
-const ESQUEMA = `
-CREATE TABLE IF NOT EXISTS mesas (
-    id                TEXT    PRIMARY KEY,
-    numero            INTEGER NOT NULL,
-    capacidade        INTEGER NOT NULL,
-    status            TEXT    NOT NULL,
-    cliente_nome      TEXT,
-    cliente_telefone  TEXT,
-    cliente_pessoas   INTEGER,
-    cliente_chegada   TEXT,
-    coluna            INTEGER,
-    linha             INTEGER,
-    desde             TEXT    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS fila (
-    ordem        INTEGER PRIMARY KEY,
-    nome         TEXT    NOT NULL,
-    telefone     TEXT    NOT NULL,
-    pessoas      INTEGER NOT NULL,
-    chegada      TEXT    NOT NULL,
-    entrada      TEXT    NOT NULL,
-    atendimento  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS resumo_de_esperas (
-    id           INTEGER PRIMARY KEY CHECK (id = 1),
-    soma         INTEGER NOT NULL,
-    atendimentos INTEGER NOT NULL
-);
-
--- Só cresce: o diário nunca é reescrito, ao contrário das outras tabelas.
-CREATE TABLE IF NOT EXISTS eventos (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    momento      TEXT    NOT NULL,
-    tipo         TEXT    NOT NULL,
-    mesa_id      TEXT,
-    mesa_numero  INTEGER,
-    capacidade   INTEGER,
-    telefone     TEXT,
-    nome         TEXT,
-    pessoas      INTEGER,
-    espera       INTEGER,
-    permanencia  INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS eventos_por_momento ON eventos (momento);
-`;
+import { migrar } from "./migracoes.js";
 
 interface LinhaMesa {
     id: string;
@@ -136,74 +88,14 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
         // WAL deixa leitura e escrita conviverem; IMMEDIATE já serializa escrita.
         this.#db.exec("PRAGMA journal_mode = WAL");
         this.#db.exec(`PRAGMA busy_timeout = ${opcoes.esperaPorTravaEmMs ?? 5000}`);
-        this.#db.exec(ESQUEMA);
-        this.#migrarColunaDesde();
-        this.#migrarEsperasAntigas();
+
+        // O esquema inteiro, e toda mudança futura nele, vem daqui — ver
+        // `migracoes.ts`. Abrir o banco é o único momento em que isso acontece.
+        migrar(this.#db, this.#relogio);
 
         const mesas = opcoes.mesas ?? [];
         if (mesas.length > 0) {
             this.#semearSeVazio(mesas);
-        }
-    }
-
-    /**
-     * Bancos anteriores não guardavam desde quando cada mesa está no seu
-     * status. Não dá para descobrir isso depois, então as mesas existentes
-     * passam a contar a partir da migração — errado por uma noite, e certo
-     * daí em diante.
-     */
-    #migrarColunaDesde(): void {
-        const colunas = this.#db.prepare("PRAGMA table_info(mesas)").all() as unknown as { name: string }[];
-        if (colunas.some((coluna) => coluna.name === "desde")) {
-            return;
-        }
-
-        this.#db.exec("BEGIN IMMEDIATE");
-        try {
-            this.#db.exec("ALTER TABLE mesas ADD COLUMN desde TEXT NOT NULL DEFAULT ''");
-            this.#db
-                .prepare("UPDATE mesas SET desde = ? WHERE desde = ''")
-                .run(this.#relogio.agora().toISOString());
-            this.#db.exec("COMMIT");
-        } catch (erro) {
-            this.#desfazer();
-            throw erro;
-        }
-    }
-
-    /**
-     * Versões anteriores guardavam uma linha por atendimento na tabela
-     * `esperas`, e `#gravar` reescrevia a tabela inteira a cada transação —
-     * custo que crescia com o movimento do restaurante e nunca baixava. Dobra
-     * o que houver lá no resumo, com o mesmo tempo médio, e apaga a tabela.
-     */
-    #migrarEsperasAntigas(): void {
-        const antiga = this.#db
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'esperas'")
-            .get();
-        if (antiga === undefined) {
-            return;
-        }
-
-        this.#db.exec("BEGIN IMMEDIATE");
-        try {
-            const acumulado = this.#db
-                .prepare("SELECT COALESCE(SUM(segundos), 0) AS soma, COUNT(*) AS atendimentos FROM esperas")
-                .get() as unknown as LinhaResumo;
-
-            if (acumulado.atendimentos > 0) {
-                const atual = this.#lerResumo();
-                this.#gravarResumo({
-                    soma: atual.soma + acumulado.soma,
-                    atendimentos: atual.atendimentos + acumulado.atendimentos
-                });
-            }
-
-            this.#db.exec("DROP TABLE esperas");
-            this.#db.exec("COMMIT");
-        } catch (erro) {
-            this.#desfazer();
-            throw erro;
         }
     }
 
