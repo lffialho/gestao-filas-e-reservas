@@ -7,6 +7,9 @@ import type { Relogio } from "../../compartilhado/tempo/relogio.js";
 import { RepositorioDoSalaoEmMemoria } from "../../infra/memoria/repositorio-do-salao-em-memoria.js";
 import {
     CancelamentoInvalido,
+    ClienteJaNaFila,
+    ClienteJaNoSalao,
+    IdentidadeDivergente,
     MesaDuplicada,
     MesaIndisponivel,
     MesaJaDisponivel,
@@ -69,13 +72,27 @@ describe("MotorGerente", () => {
 
     describe("cadastro de mesas", () => {
         // Regressão: adicionarMesa devolvia o Map privado, e um clear() externo
-        // apagava o salão inteiro.
+        // apagava o salão inteiro. Hoje devolve um retrato congelado.
         it("não entrega o estado interno a quem cadastra", async () => {
             const motor = motorVazio();
-            const retorno: unknown = await motor.adicionarMesa(new Mesa("m1", 1, 4));
+            const { mesa, atendido } = await motor.adicionarMesa(new Mesa("m1", 1, 4));
 
-            assert.equal(retorno, undefined);
+            assert.equal(Object.isFrozen(mesa), true);
+            assert.equal(atendido, null, "sem ninguém na fila, a mesa nasce vazia");
             assert.equal((await motor.consultarMesa("m1"))?.id, "m1");
+        });
+
+        // Regressão: a Mesa passada continuava sendo a de dentro do salão, e
+        // quem guardasse a referência mudava o agregado fora de transação.
+        it("clona a mesa recebida em vez de guardar a referência", async () => {
+            const motor = motorVazio();
+            const minha = new Mesa("m1", 1, 4);
+            await motor.adicionarMesa(minha);
+
+            minha.reservar(new Cliente("Intruso", 4, "9999"));
+
+            assert.equal((await motor.consultarMesa("m1"))?.status, StatusMesa.DISPONIVEL);
+            assert.equal(await motor.taxaDeOcupacao(), 0);
         });
 
         it("recusa duas mesas com o mesmo id", async () => {
@@ -419,6 +436,174 @@ describe("MotorGerente", () => {
             assert.equal(relatorio.mesas.length, 2);
             assert.equal(relatorio.mesas[0]?.cliente?.nome, "Ana");
             assert.equal(relatorio.mesas[1]?.cliente, null);
+        });
+    });
+
+    describe("mesa nova chama quem está na fila", () => {
+        // Regressão: só liberação e cancelamento consultavam a fila, então o
+        // salão conseguia ficar com mesa vazia e gente esperando — estado que
+        // não se desfazia sozinho, porque quem chegasse depois ia para trás
+        // de quem já esperava.
+        it("a mesa cadastrada já sai reservada para o primeiro que couber", async () => {
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 2)] })
+            );
+            await motor.receberCliente(cliente("Ocupante", 2, "0000"));
+            const carlos = await motor.receberCliente(cliente("Carlos", 2, "2222"));
+            assert.equal(carlos.destino, "fila");
+
+            const { mesa, atendido } = await motor.adicionarMesa(new Mesa("m2", 2, 2));
+
+            assert.equal(atendido?.nome, "Carlos");
+            assert.equal(mesa.status, StatusMesa.RESERVADA);
+            assert.equal(mesa.cliente?.telefone, "2222");
+            assert.equal(await motor.tamanhoFilaEspera(), 0);
+        });
+
+        it("não mexe na fila quando ninguém cabe na mesa nova", async () => {
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 6)] })
+            );
+            await motor.receberCliente(cliente("Ocupante", 6, "0000"));
+            await motor.receberCliente(cliente("Sexteto", 6, "2222"));
+
+            const { mesa, atendido } = await motor.adicionarMesa(new Mesa("m2", 2, 2));
+
+            assert.equal(atendido, null);
+            assert.equal(mesa.status, StatusMesa.DISPONIVEL);
+            assert.equal(await motor.tamanhoFilaEspera(), 1);
+        });
+
+        it("avisa quem saiu da fila por causa da mesa nova", async () => {
+            const avisados: string[] = [];
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 2)] }),
+                {
+                    notificador: {
+                        mesaPronta: async (aviso) => {
+                            avisados.push(`${aviso.nome}@${aviso.mesaId}`);
+                        }
+                    }
+                }
+            );
+            await motor.receberCliente(cliente("Ocupante", 2, "0000"));
+            await motor.receberCliente(cliente("Carlos", 2, "2222"));
+
+            await motor.adicionarMesa(new Mesa("m2", 2, 2));
+
+            assert.deepEqual(avisados, ["Carlos@m2"]);
+        });
+    });
+
+    describe("telefone é identidade", () => {
+        // Regressão: ClienteJaNaFila só olhava a fila, então o mesmo telefone
+        // ocupava duas mesas — e o aviso de mesa pronta passava a ser ambíguo.
+        it("recusa sentar duas vezes o mesmo telefone", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+
+            await assert.rejects(motor.receberCliente(cliente("Ana outra vez", 2, "1111")), ClienteJaNoSalao);
+            assert.equal(await motor.taxaDeOcupacao(), 50, "a segunda chegada não pegou mesa");
+        });
+
+        it("recusa enfileirar quem já está sentado", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+
+            await assert.rejects(motor.entrarNaFila(cliente("Ana", 2, "1111")), ClienteJaNoSalao);
+            assert.equal(await motor.tamanhoFilaEspera(), 0);
+        });
+
+        it("recusa segunda chegada de quem já está na fila", async () => {
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 2)] })
+            );
+            await motor.receberCliente(cliente("Ocupante", 2, "0000"));
+            await motor.receberCliente(cliente("Carlos", 2, "2222"));
+
+            await assert.rejects(motor.receberCliente(cliente("Carlos", 2, "2222")), ClienteJaNaFila);
+            assert.equal(await motor.tamanhoFilaEspera(), 1);
+        });
+    });
+
+    describe("reserva a dedo para quem está na fila", () => {
+        /**
+         * m1 livre e Carlos na fila: o anfitrião o enfileirou de propósito, que
+         * é o caminho em que `fazerReserva` encontra alguém esperando por uma
+         * mesa que já está disponível.
+         */
+        async function comCarlosNaFila(): Promise<MotorGerente> {
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 2)] })
+            );
+            await motor.entrarNaFila(cliente("Carlos", 2, "2222"));
+            return motor;
+        }
+
+        it("senta o cliente que está na fila, não o objeto do pedido", async () => {
+            const motor = await comCarlosNaFila();
+
+            const reserva = await motor.fazerReserva("m1", cliente("Carlos", 2, "2222"));
+
+            assert.equal(reserva.cliente.nome, "Carlos");
+            assert.equal(await motor.tamanhoFilaEspera(), 0);
+            assert.equal((await motor.consultarMesa("m1"))?.cliente?.telefone, "2222");
+        });
+
+        // Regressão: o Cliente do pedido nascia com horaChegada = agora, então
+        // sentar alguém pelo caminho do anfitrião apagava quanto ele esperou.
+        it("preserva a hora de chegada de quem esperava", async () => {
+            const relogio = new RelogioFalso();
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 2)], relogio })
+            );
+            await motor.entrarNaFila(new Cliente("Carlos", 2, "2222", relogio));
+            relogio.avancarSegundos(600);
+
+            const reserva = await motor.fazerReserva("m1", new Cliente("Carlos", 2, "2222", relogio));
+
+            assert.equal(reserva.cliente.horaChegada.getTime(), 0, "a chegada é a original");
+            assert.equal(await motor.tempoMedioEspera(), 600);
+        });
+
+        // Regressão: casava só pelo telefone e sentava o objeto do pedido —
+        // um erro de digitação do anfitrião tirava Carlos da fila e punha
+        // outra pessoa na mesa dele.
+        it("recusa quando o nome diverge do que está na fila", async () => {
+            const motor = await comCarlosNaFila();
+
+            await assert.rejects(
+                motor.fazerReserva("m1", cliente("Zé Ninguém", 2, "2222")),
+                IdentidadeDivergente
+            );
+            assert.equal(await motor.tamanhoFilaEspera(), 1, "Carlos continua na fila");
+            assert.equal((await motor.consultarMesa("m1"))?.status, StatusMesa.DISPONIVEL);
+        });
+
+        it("recusa quando o tamanho do grupo diverge", async () => {
+            const motor = await comCarlosNaFila();
+
+            await assert.rejects(
+                motor.fazerReserva("m1", cliente("Carlos", 1, "2222")),
+                IdentidadeDivergente
+            );
+            assert.equal(await motor.tamanhoFilaEspera(), 1);
+        });
+
+        it("recusa reservar para quem já está sentado em outra mesa", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+
+            await assert.rejects(motor.fazerReserva("m1", cliente("Ana", 2, "1111")), ClienteJaNoSalao);
+        });
+
+        it("recusa sentar numa mesa em que quem está na fila não cabe", async () => {
+            const motor = new MotorGerente(
+                new RepositorioDoSalaoEmMemoria({ mesas: [new Mesa("m1", 1, 2)] })
+            );
+            await motor.entrarNaFila(cliente("Sexteto", 6, "2222"));
+
+            await assert.rejects(motor.fazerReserva("m1", cliente("Sexteto", 6, "2222")), ClienteJaNaFila);
         });
     });
 });

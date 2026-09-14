@@ -18,6 +18,19 @@ export interface OpcoesDaFabrica {
 const cliente = (nome: string, pessoas: number, telefone: string): Cliente =>
     new Cliente(nome, pessoas, telefone);
 
+/** Relógio que só anda quando o teste manda — nenhum caso depende de sleep. */
+class RelogioDeTeste implements Relogio {
+    #instante = 0;
+
+    agora(): Date {
+        return new Date(this.#instante);
+    }
+
+    avancarSegundos(segundos: number): void {
+        this.#instante += segundos * 1000;
+    }
+}
+
 const duasMesas = (): Mesa[] => [new Mesa("m1", 1, 4), new Mesa("m2", 2, 2)];
 
 /**
@@ -201,6 +214,89 @@ export function verificarContratoDoRepositorio(
 
                 const total = await repositorio.transacao((salao) => salao.totalDeMesas);
                 assert.equal(total, 2, "o repositório continua usável");
+            } finally {
+                fechar();
+            }
+        });
+
+        it("consulta enxerga o que a última transação gravou", async () => {
+            const { repositorio, fechar } = criar({ mesas: duasMesas() });
+            try {
+                await repositorio.transacao((salao) => salao.receberCliente(cliente("Ana", 2, "1111")));
+
+                const info = await repositorio.consulta((salao) => salao.consultarMesa("m2"));
+                assert.equal(info?.status, StatusMesa.RESERVADA);
+                assert.equal(await repositorio.consulta((salao) => salao.totalDeMesas), 2);
+            } finally {
+                fechar();
+            }
+        });
+
+        /**
+         * Sem isto, os dois adaptadores divergiam em silêncio: o de memória
+         * guardava a Mesa recebida, de modo que quem segurasse a referência
+         * mudava o salão fora de transação e fora da trava; o de SQLite
+         * serializava o estado e não mudava nada.
+         */
+        it("não guarda a Mesa recebida: mudá-la depois não mexe no salão", async () => {
+            const { repositorio, fechar } = criar();
+            try {
+                const minha = new Mesa("m1", 1, 4);
+                await repositorio.transacao((salao) => salao.adicionarMesa(minha));
+
+                minha.reservar(cliente("Intruso", 4, "9999"));
+
+                const info = await repositorio.consulta((salao) => salao.consultarMesa("m1"));
+                assert.equal(info?.status, StatusMesa.DISPONIVEL);
+                assert.equal(info?.cliente, null);
+            } finally {
+                fechar();
+            }
+        });
+
+        it("não entrega o item vivo da fila: mudá-lo depois não mexe no salão", async () => {
+            const { repositorio, fechar } = criar({ mesas: duasMesas() });
+            try {
+                const item = await repositorio.transacao((salao) =>
+                    salao.entrarNaFila(cliente("Ana", 2, "1111"))
+                );
+
+                assert.equal(Object.isFrozen(item), true);
+                item.dataEntrada.setTime(0);
+
+                const daFila = await repositorio.consulta((salao) => salao.fila()[0]);
+                assert.notEqual(daFila?.dataEntrada.getTime(), 0);
+            } finally {
+                fechar();
+            }
+        });
+
+        it("as mesas saem na mesma ordem, seja qual for o adaptador", async () => {
+            const { repositorio, fechar } = criar({
+                mesas: [new Mesa("mZ", 9, 2), new Mesa("mA", 1, 4), new Mesa("mM", 5, 6)]
+            });
+            try {
+                const ids = await repositorio.consulta((salao) =>
+                    salao.relatorio().mesas.map((mesa) => mesa.id)
+                );
+                assert.deepEqual(ids, ["mA", "mM", "mZ"], "ordem pelo número da mesa");
+            } finally {
+                fechar();
+            }
+        });
+
+        it("o tempo médio de espera atravessa transações", async () => {
+            const relogio = new RelogioDeTeste();
+            const { repositorio, fechar } = criar({ mesas: [new Mesa("unica", 1, 2)], relogio });
+            try {
+                await repositorio.transacao((salao) => {
+                    salao.receberCliente(cliente("Ana", 2, "1111"));
+                    salao.receberCliente(cliente("Bruno", 2, "2222"));
+                });
+                relogio.avancarSegundos(120);
+                await repositorio.transacao((salao) => salao.liberarMesa("unica"));
+
+                assert.equal(await repositorio.consulta((salao) => salao.tempoMedioEsperaSegundos), 120);
             } finally {
                 fechar();
             }

@@ -5,6 +5,7 @@ import type { Posicao } from "../entidades/planta.js";
 import type {
     InfoMesa,
     RelatorioDoSalao,
+    ResultadoCadastroDeMesa,
     ResultadoLiberacao,
     ResultadoRecepcao,
     ResultadoReserva
@@ -21,6 +22,7 @@ export type {
     InfoCliente,
     InfoMesa,
     RelatorioDoSalao,
+    ResultadoCadastroDeMesa,
     ResultadoLiberacao,
     ResultadoRecepcao,
     ResultadoReserva
@@ -56,7 +58,11 @@ export class MotorGerente {
      * confirmar, e nunca propaga erro: a mesa já é daquele cliente, então
      * provedor de aviso fora do ar não pode desfazer o atendimento.
      */
-    async #avisarAtendido(resultado: ResultadoLiberacao): Promise<void> {
+    async #avisarAtendido(resultado: {
+        mesaId: string;
+        mesaNumero: number;
+        atendido: Cliente | null;
+    }): Promise<void> {
         const atendido = resultado.atendido;
         if (atendido === null || this.#notificador === null) {
             return;
@@ -78,42 +84,51 @@ export class MotorGerente {
         }
     }
 
-    async adicionarMesa(mesa: Mesa): Promise<void> {
-        return this.#repositorio.transacao((salao) => {
-            salao.adicionarMesa(mesa);
+    /**
+     * Cadastra a mesa. Se alguém da fila couber nela, o salão já a entrega a
+     * essa pessoa — e aí ela precisa ser avisada, como em qualquer outra saída
+     * da fila.
+     */
+    async adicionarMesa(mesa: Mesa): Promise<ResultadoCadastroDeMesa> {
+        const resultado = await this.#repositorio.transacao((salao) => salao.adicionarMesa(mesa));
+        await this.#avisarAtendido({
+            mesaId: resultado.mesa.id,
+            mesaNumero: resultado.mesa.numero,
+            atendido: resultado.atendido
         });
+        return resultado;
     }
 
     async consultarMesa(mesaId: string): Promise<InfoMesa | undefined> {
-        return this.#repositorio.transacao((salao) => salao.consultarMesa(mesaId));
+        return this.#repositorio.consulta((salao) => salao.consultarMesa(mesaId));
     }
 
     async totalDeMesas(): Promise<number> {
-        return this.#repositorio.transacao((salao) => salao.totalDeMesas);
+        return this.#repositorio.consulta((salao) => salao.totalDeMesas);
     }
 
     async tamanhoFilaEspera(): Promise<number> {
-        return this.#repositorio.transacao((salao) => salao.tamanhoFila);
+        return this.#repositorio.consulta((salao) => salao.tamanhoFila);
     }
 
     async tempoMedioEspera(): Promise<number> {
-        return this.#repositorio.transacao((salao) => salao.tempoMedioEsperaSegundos);
+        return this.#repositorio.consulta((salao) => salao.tempoMedioEsperaSegundos);
     }
 
     async maiorCapacidade(): Promise<number> {
-        return this.#repositorio.transacao((salao) => salao.maiorCapacidade);
+        return this.#repositorio.consulta((salao) => salao.maiorCapacidade);
     }
 
     async taxaDeOcupacao(): Promise<number> {
-        return this.#repositorio.transacao((salao) => salao.taxaDeOcupacao);
+        return this.#repositorio.consulta((salao) => salao.taxaDeOcupacao);
     }
 
     async consultarFila(): Promise<ItemFila[]> {
-        return this.#repositorio.transacao((salao) => salao.fila());
+        return this.#repositorio.consulta((salao) => salao.fila());
     }
 
     async gerarRelatorio(): Promise<RelatorioDoSalao> {
-        return this.#repositorio.transacao((salao) => salao.relatorio());
+        return this.#repositorio.consulta((salao) => salao.relatorio());
     }
 
     /** Recebe quem chegou: senta na melhor mesa livre ou põe na fila. */

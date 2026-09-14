@@ -425,4 +425,112 @@ describe("API HTTP", () => {
             assert.equal(json.erro.capacidade, 2);
         });
     });
+
+    describe("caminho percent-codificado", () => {
+        const api = comApiPropria();
+
+        // Regressão: o caminho era casado cru, então um telefone em E.164 —
+        // que precisa mandar o "+" como %2B — nunca saía da fila.
+        it("decodifica o parâmetro antes de procurar o cliente", async () => {
+            const telefone = "+5511999999999";
+
+            // Lota as três mesas para que o próximo vá para a fila.
+            await api().pedir("POST", "/chegadas", { nome: "A", pessoas: 2, telefone: "1" });
+            await api().pedir("POST", "/chegadas", { nome: "B", pessoas: 4, telefone: "2" });
+            await api().pedir("POST", "/chegadas", { nome: "C", pessoas: 6, telefone: "3" });
+
+            const entrada = await api().pedir("POST", "/chegadas", { nome: "Ana", pessoas: 2, telefone });
+            assert.equal(entrada.json.destino, "fila");
+
+            const saida = await api().pedir("DELETE", `/fila/${encodeURIComponent(telefone)}`);
+            assert.equal(saida.status, 200);
+            assert.deepEqual(saida.json, { saiuDaFila: true });
+
+            const fila = await api().pedir("GET", "/fila");
+            assert.equal(fila.json.itens.length, 0);
+        });
+
+        it("400 quando a codificação do caminho é inválida", async () => {
+            const { status, json } = await api().pedir("GET", "/mesas/%E0%A4%A");
+            assert.equal(status, 400);
+            assert.equal(json.erro.tipo, "DadosInvalidos");
+        });
+    });
+
+    describe("HEAD", () => {
+        const api = comApiPropria();
+
+        // Regressão: HEAD não casava rota nenhuma e caía no 405, justo no
+        // método que health check e balanceador mais usam.
+        it("HEAD roteia como GET", async () => {
+            const { status } = await api().pedir("HEAD", "/saude");
+            assert.equal(status, 200);
+        });
+
+        it("HEAD numa rota autenticada continua exigindo token", async () => {
+            const { status } = await api().pedir("HEAD", "/salao");
+            assert.equal(status, 200, "este servidor de teste está aberto");
+        });
+
+        it("o Allow do 405 anuncia HEAD junto com GET", async () => {
+            const { status, json } = await api().pedir("DELETE", "/salao");
+            assert.equal(status, 405);
+            assert.equal(json.erro.tipo, "MetodoNaoPermitido");
+        });
+    });
+
+    describe("identidade do cliente", () => {
+        const api = comApiPropria();
+
+        // Regressão: só a fila checava telefone repetido, então a mesma
+        // identidade conseguia ocupar duas mesas ao mesmo tempo.
+        it("409 quando o telefone já está sentado", async () => {
+            const primeira = await api().pedir("POST", "/chegadas", {
+                nome: "Ana",
+                pessoas: 2,
+                telefone: "1111"
+            });
+            assert.equal(primeira.json.destino, "mesa");
+
+            const segunda = await api().pedir("POST", "/chegadas", {
+                nome: "Ana de novo",
+                pessoas: 2,
+                telefone: "1111"
+            });
+            assert.equal(segunda.status, 409);
+            assert.equal(segunda.json.erro.tipo, "ClienteJaNoSalao");
+            assert.equal(segunda.json.erro.telefone, "1111");
+        });
+    });
+
+    describe("cadastro devolve a mesa criada", () => {
+        const api = comApiPropria();
+
+        // Antes o 201 vinha de uma segunda transação de leitura, que podia
+        // enxergar a mesa já reservada por outra requisição.
+        it("201 com o retrato da própria mesa cadastrada", async () => {
+            const { status, json } = await api().pedir("POST", "/mesas", {
+                id: "nova",
+                numero: 9,
+                capacidade: 8
+            });
+
+            assert.equal(status, 201);
+            assert.equal(json.id, "nova");
+            assert.equal(json.capacidade, 8);
+            assert.equal(json.status, "DISPONIVEL");
+        });
+
+        it("409 quando o número da mesa já existe", async () => {
+            const { status, json } = await api().pedir("POST", "/mesas", {
+                id: "outra",
+                numero: 1,
+                capacidade: 2
+            });
+
+            assert.equal(status, 409);
+            assert.equal(json.erro.tipo, "NumeroDeMesaDuplicado");
+            assert.equal(json.erro.mesaId, "m1");
+        });
+    });
 });

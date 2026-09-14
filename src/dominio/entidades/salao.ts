@@ -6,10 +6,14 @@ import { COLUNAS_DA_PLANTA, LINHAS_DA_PLANTA, mesmaPosicao, type Posicao } from 
 import type { EstadoDoSalao } from "../estado.js";
 import {
     CancelamentoInvalido,
+    ClienteJaNaFila,
+    ClienteJaNoSalao,
     FilaTemPrioridade,
     GrupoSemMesaPossivel,
+    IdentidadeDivergente,
     MesaDuplicada,
     MesaNaoEncontrada,
+    NumeroDeMesaDuplicado,
     PosicaoOcupada,
     SalaoSemEspaco
 } from "../erros.js";
@@ -60,6 +64,16 @@ export interface ResultadoLiberacao {
     status: StatusMesa;
 }
 
+/**
+ * Cadastrar mesa é, no mesmo instante, uma chance de esvaziar a fila: se
+ * alguém que espera cabe na mesa nova, ela já nasce dele. Por isso o cadastro
+ * devolve quem foi atendido — o chamador precisa avisar a pessoa.
+ */
+export interface ResultadoCadastroDeMesa {
+    mesa: InfoMesa;
+    atendido: Cliente | null;
+}
+
 function retratar(mesa: Mesa): InfoMesa {
     const cliente = mesa.clienteAtual;
     return Object.freeze({
@@ -80,6 +94,22 @@ function retratar(mesa: Mesa): InfoMesa {
 }
 
 /**
+ * O telefone diz *quem* é; o resto dos dados tem de bater. Divergir aqui
+ * significa que o pedido fala de outra pessoa, ou que os dados de quem espera
+ * mudaram — nos dois casos aceitar em silêncio trocaria alguém da fila.
+ */
+function conferirIdentidade(naFila: Cliente, recebido: Cliente): void {
+    if (naFila.nome === recebido.nome && naFila.quantidadePessoas === recebido.quantidadePessoas) {
+        return;
+    }
+    throw new IdentidadeDivergente(
+        naFila.telefone,
+        `${naFila.nome} (${naFila.quantidadePessoas}p)`,
+        `${recebido.nome} (${recebido.quantidadePessoas}p)`
+    );
+}
+
+/**
  * O salão é o agregado: mesas e fila de espera precisam mudar juntas para
  * continuarem coerentes — dar uma mesa a alguém é, no mesmo instante, tirá-lo
  * da fila. Por isso a consistência se define aqui, e não por mesa.
@@ -96,30 +126,55 @@ export class Salao {
         this.#mesas = new Map<string, Mesa>();
         this.#filaDeEspera = new FilaDeEspera(relogio);
         for (const mesa of mesas) {
-            this.adicionarMesa(mesa);
+            this.#registrarMesa(mesa);
         }
     }
 
     /**
-     * Cadastra a mesa. Sem posição declarada, ela recebe o primeiro ladrilho
-     * livre — assim nenhum salão fica com mesa sem lugar na planta.
+     * Cadastra a mesa e, se alguém na fila couber nela, já a entrega a essa
+     * pessoa. Sem esse segundo passo o salão consegue ficar com mesa vazia e
+     * gente esperando ao mesmo tempo — e esse estado não se desfaz sozinho,
+     * porque quem chega depois também vai para trás de quem já esperava.
      */
-    adicionarMesa(mesa: Mesa): void {
+    adicionarMesa(mesa: Mesa): ResultadoCadastroDeMesa {
+        const propria = this.#registrarMesa(mesa);
+        const atendido = this.#entregarAoProximoDaFila(propria);
+        return { mesa: retratar(propria), atendido };
+    }
+
+    /**
+     * Põe a mesa no salão sem tocar na fila — é disso que a reconstituição
+     * precisa — validando identidade, numeração e lugar na planta. Sem posição
+     * declarada, a mesa recebe o primeiro ladrilho livre.
+     *
+     * A mesa é clonada de propósito: guardar o objeto que veio de fora deixa o
+     * chamador mudar o salão depois, sem transação e sem trava. O repositório
+     * em memória permitia isso e o SQLite não — os dois têm de concordar.
+     */
+    #registrarMesa(mesa: Mesa): Mesa {
         if (this.#mesas.has(mesa.id)) {
             throw new MesaDuplicada(mesa.id);
         }
-
-        const desejada = mesa.posicao;
-        if (desejada === null) {
-            mesa.moverPara(this.#primeiroLadrilhoLivre());
-        } else {
-            const ocupante = this.#mesaEm(desejada, mesa.id);
-            if (ocupante !== null) {
-                throw new PosicaoOcupada(mesa.id, ocupante.id);
+        for (const existente of this.#mesas.values()) {
+            if (existente.numero === mesa.numero) {
+                throw new NumeroDeMesaDuplicado(mesa.numero, existente.id);
             }
         }
 
-        this.#mesas.set(mesa.id, mesa);
+        const propria = Mesa.reconstituir(mesa.estado());
+        const desejada = propria.posicao;
+
+        if (desejada === null) {
+            propria.moverPara(this.#primeiroLadrilhoLivre());
+        } else {
+            const ocupante = this.#mesaEm(desejada, propria.id);
+            if (ocupante !== null) {
+                throw new PosicaoOcupada(propria.id, ocupante.id);
+            }
+        }
+
+        this.#mesas.set(propria.id, propria);
+        return propria;
     }
 
     /** Arrasta a mesa para outro ladrilho. */
@@ -166,10 +221,24 @@ export class Salao {
         return salao;
     }
 
+    /**
+     * Ordem estável das mesas: pelo número, com o id desempatando. Sem isso a
+     * ordem seria a de cadastro em memória e a do `SELECT` no banco — os dois
+     * adaptadores devolveriam o mesmo salão em ordens diferentes.
+     */
+    #mesasOrdenadas(): Mesa[] {
+        return Array.from(this.#mesas.values()).sort((a, b) => {
+            if (a.numero !== b.numero) {
+                return a.numero - b.numero;
+            }
+            return a.id < b.id ? -1 : 1;
+        });
+    }
+
     /** Retrato completo para persistência — ver `EstadoDoSalao`. */
     estado(): EstadoDoSalao {
         return {
-            mesas: Array.from(this.#mesas.values()).map((mesa) => mesa.estado()),
+            mesas: this.#mesasOrdenadas().map((mesa) => mesa.estado()),
             fila: this.#filaDeEspera.estado()
         };
     }
@@ -228,8 +297,34 @@ export class Salao {
             taxaOcupacaoPercentual: this.taxaDeOcupacao,
             tempoMedioEsperaSegundos: this.tempoMedioEsperaSegundos,
             tamanhoFila: this.tamanhoFila,
-            mesas: Array.from(this.#mesas.values()).map(retratar)
+            mesas: this.#mesasOrdenadas().map(retratar)
         };
+    }
+
+    /** Em que mesa este telefone está sentado, se estiver em alguma. */
+    #mesaDoTelefone(telefone: string): Mesa | null {
+        for (const mesa of this.#mesas.values()) {
+            const ocupante = mesa.clienteAtual;
+            if (ocupante !== null && ocupante.telefone === telefone) {
+                return mesa;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * O telefone é a identidade do cliente — é por ele que se desiste da fila e
+     * é para ele que o aviso vai. A mesma identidade em duas mesas, ou sentada
+     * e esperando ao mesmo tempo, quebra as duas coisas.
+     */
+    #recusarTelefoneJaNoSalao(telefone: string): void {
+        const mesa = this.#mesaDoTelefone(telefone);
+        if (mesa !== null) {
+            throw new ClienteJaNoSalao(telefone, mesa.id);
+        }
+        if (this.#filaDeEspera.consultar(telefone) !== null) {
+            throw new ClienteJaNaFila(telefone);
+        }
     }
 
     /**
@@ -237,6 +332,8 @@ export class Salao {
      * coloca na fila. É aqui que a ordem de chegada é garantida.
      */
     receberCliente(cliente: Cliente): ResultadoRecepcao {
+        this.#recusarTelefoneJaNoSalao(cliente.telefone);
+
         const maior = this.maiorCapacidade;
         if (cliente.quantidadePessoas > maior) {
             throw new GrupoSemMesaPossivel(cliente.quantidadePessoas, maior);
@@ -256,6 +353,9 @@ export class Salao {
      * Melhor mesa livre para o grupo: a menor que o acomode, para não gastar
      * uma mesa grande com um casal. Uma mesa é descartada se alguém que já
      * está na fila também caberia nela — quem chegou antes tem prioridade.
+     *
+     * Quem chega aqui nunca está na fila: `receberCliente` já recusou o
+     * telefone repetido antes de chamar.
      */
     #melhorMesaLivrePara(cliente: Cliente): Mesa | null {
         const candidatas = Array.from(this.#mesas.values())
@@ -263,8 +363,7 @@ export class Salao {
             .sort((a, b) => a.capacidade - b.capacidade);
 
         for (const mesa of candidatas) {
-            const esperando = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
-            if (esperando === null || esperando.cliente.telefone === cliente.telefone) {
+            if (this.#filaDeEspera.proximoCompativel(mesa.capacidade) === null) {
                 return mesa;
             }
         }
@@ -274,7 +373,10 @@ export class Salao {
     /**
      * Coloca o cliente numa mesa escolhida a dedo. Continua valendo a ordem de
      * chegada: se alguém na fila cabe nessa mesa, só ele pode recebê-la — e,
-     * nesse caso, sai da fila ao sentar.
+     * nesse caso, quem senta é **o cliente que já estava na fila**, não o que
+     * veio no pedido. Casar só pelo telefone e sentar o objeto recebido deixava
+     * um erro de digitação do anfitrião tirar uma pessoa da fila e pôr outra no
+     * lugar dela, além de perder a hora de chegada original.
      */
     fazerReserva(mesaId: string, cliente: Cliente): ResultadoReserva {
         const mesa = this.#obterMesa(mesaId);
@@ -284,15 +386,29 @@ export class Salao {
             throw new FilaTemPrioridade(mesa.id, esperando.cliente.nome);
         }
 
-        mesa.reservar(cliente);
-        if (esperando !== null) {
-            this.#filaDeEspera.confirmarAtendimento(esperando);
+        const jaSentado = this.#mesaDoTelefone(cliente.telefone);
+        if (jaSentado !== null) {
+            throw new ClienteJaNoSalao(cliente.telefone, jaSentado.id);
         }
+
+        if (esperando === null) {
+            // Ninguém na fila cabe nesta mesa. Se este cliente está na fila, é
+            // porque não cabe aqui: sentá-lo o deixaria em dois lugares.
+            if (this.#filaDeEspera.consultar(cliente.telefone) !== null) {
+                throw new ClienteJaNaFila(cliente.telefone);
+            }
+            mesa.reservar(cliente);
+            return { mesaId: mesa.id, mesaNumero: mesa.numero, cliente, status: mesa.status };
+        }
+
+        conferirIdentidade(esperando.cliente, cliente);
+        mesa.reservar(esperando.cliente);
+        this.#filaDeEspera.confirmarAtendimento(esperando);
 
         return {
             mesaId: mesa.id,
             mesaNumero: mesa.numero,
-            cliente,
+            cliente: esperando.cliente,
             status: mesa.status
         };
     }
@@ -305,6 +421,7 @@ export class Salao {
     }
 
     entrarNaFila(cliente: Cliente): ItemFila {
+        this.#recusarTelefoneJaNoSalao(cliente.telefone);
         return this.#filaDeEspera.adicionar(cliente);
     }
 
@@ -327,6 +444,26 @@ export class Salao {
         });
     }
 
+    /**
+     * Entrega a mesa ao primeiro da fila que couber nela, se houver algum.
+     * A mesa aceita primeiro; só depois o cliente sai da fila, para que uma
+     * falha no meio não some com ninguém.
+     */
+    #entregarAoProximoDaFila(mesa: Mesa): Cliente | null {
+        if (!mesa.estaDisponivel) {
+            return null;
+        }
+
+        const proximo = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
+        if (proximo === null) {
+            return null;
+        }
+
+        mesa.reservar(proximo.cliente);
+        this.#filaDeEspera.confirmarAtendimento(proximo);
+        return proximo.cliente;
+    }
+
     #desocupar(mesaId: string, validar: ((mesa: Mesa) => void) | null): ResultadoLiberacao {
         const mesa = this.#obterMesa(mesaId);
         if (validar !== null) {
@@ -334,27 +471,13 @@ export class Salao {
         }
 
         const clienteAnterior = mesa.liberar();
-        const proximo = this.#filaDeEspera.proximoCompativel(mesa.capacidade);
-
-        if (proximo === null) {
-            return {
-                mesaId: mesa.id,
-                mesaNumero: mesa.numero,
-                clienteAnterior,
-                atendido: null,
-                status: mesa.status
-            };
-        }
-
-        // A mesa aceita primeiro; só depois o cliente sai da fila.
-        mesa.reservar(proximo.cliente);
-        this.#filaDeEspera.confirmarAtendimento(proximo);
+        const atendido = this.#entregarAoProximoDaFila(mesa);
 
         return {
             mesaId: mesa.id,
             mesaNumero: mesa.numero,
             clienteAnterior,
-            atendido: proximo.cliente,
+            atendido,
             status: mesa.status
         };
     }

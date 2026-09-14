@@ -12,26 +12,40 @@ export {
     type InfoCliente,
     type InfoMesa,
     type RelatorioDoSalao,
+    type ResultadoCadastroDeMesa,
     type ResultadoLiberacao,
     type ResultadoRecepcao,
     type ResultadoReserva
 } from "./dominio/entidades/salao.js";
+export {
+    COLUNAS_DA_PLANTA,
+    LINHAS_DA_PLANTA,
+    dentroDaPlanta,
+    type Posicao
+} from "./dominio/entidades/planta.js";
 export { MotorGerente, type OpcoesDoMotor } from "./dominio/servicos/motor-gerente.js";
 
-// Erros — o chamador decide pelo tipo, não pelo texto da mensagem
+// Erros — o chamador decide pelo tipo, não pelo texto da mensagem, então todos
+// os que a API pode devolver precisam ser nomeáveis daqui.
 export {
     CancelamentoInvalido,
     CapacidadeInsuficiente,
     ClienteJaNaFila,
+    ClienteJaNoSalao,
     DadosInvalidos,
     ErroDeDominio,
     FilaTemPrioridade,
     GrupoSemMesaPossivel,
+    IdentidadeDivergente,
     ItemForaDaFila,
     MesaDuplicada,
     MesaIndisponivel,
     MesaJaDisponivel,
     MesaNaoEncontrada,
+    NumeroDeMesaDuplicado,
+    PosicaoForaDaPlanta,
+    PosicaoOcupada,
+    SalaoSemEspaco,
     TransicaoInvalida
 } from "./dominio/erros.js";
 
@@ -41,6 +55,7 @@ export type { AvisoDeMesaPronta, Notificador } from "./dominio/portas/notificado
 export type {
     EstadoDaFila,
     EstadoDaMesa,
+    EstadoDasEsperas,
     EstadoDoCliente,
     EstadoDoItemFila,
     EstadoDoSalao

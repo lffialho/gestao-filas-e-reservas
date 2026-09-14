@@ -2,7 +2,6 @@ import type { Cliente } from "../dominio/entidades/cliente.js";
 import type { ItemFila } from "../dominio/entidades/fila-de-espera.js";
 import type {
     InfoMesa,
-    RelatorioDoSalao,
     ResultadoLiberacao,
     ResultadoRecepcao,
     ResultadoReserva
@@ -45,14 +44,8 @@ export function itemFilaJson(item: ItemFila): ItemFilaJson {
     };
 }
 
-/** `InfoMesa` e `RelatorioDoSalao` já são dados simples: passam direto. */
-export function mesaJson(mesa: InfoMesa): InfoMesa {
-    return mesa;
-}
-
-export function relatorioJson(relatorio: RelatorioDoSalao): RelatorioDoSalao {
-    return relatorio;
-}
+// `InfoMesa` e `RelatorioDoSalao` já são dados simples e congelados: vão para
+// o corpo da resposta como estão, sem função de conversão no meio.
 
 export type RecepcaoJson =
     | { destino: "mesa"; mesa: InfoMesa }

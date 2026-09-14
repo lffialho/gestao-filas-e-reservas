@@ -26,10 +26,16 @@ function iguaisEmTempoConstante(a: string, b: string): boolean {
     return timingSafeEqual(bytesA, bytesB);
 }
 
+/**
+ * O nome do esquema é case-insensitive pela RFC 7235 — há cliente que manda
+ * `bearer`. O token que vem depois dele, esse sim, é comparado byte a byte.
+ */
+const ESQUEMA = "bearer ";
+
 function tokenDaRequisicao(requisicao: IncomingMessage): string | null {
     const autorizacao = requisicao.headers.authorization;
-    if (typeof autorizacao === "string" && autorizacao.startsWith("Bearer ")) {
-        return autorizacao.slice("Bearer ".length).trim();
+    if (typeof autorizacao === "string" && autorizacao.slice(0, ESQUEMA.length).toLowerCase() === ESQUEMA) {
+        return autorizacao.slice(ESQUEMA.length).trim();
     }
 
     const cabecalho = requisicao.headers["x-api-key"];

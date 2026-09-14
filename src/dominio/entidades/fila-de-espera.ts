@@ -9,14 +9,33 @@ export interface ItemFila {
     dataAtendimento?: Date;
 }
 
+/**
+ * Cópia congelada de um item: é isto que sai da fila para fora do domínio.
+ * Devolver o item vivo deixaria quem chamou escrever em `dataAtendimento` —
+ * campo que só a fila pode preencher — sem passar por transação nenhuma.
+ */
+function retratar(item: ItemFila): ItemFila {
+    return Object.freeze(
+        item.dataAtendimento === undefined
+            ? { cliente: item.cliente, dataEntrada: new Date(item.dataEntrada) }
+            : {
+                  cliente: item.cliente,
+                  dataEntrada: new Date(item.dataEntrada),
+                  dataAtendimento: new Date(item.dataAtendimento)
+              }
+    );
+}
+
 export class FilaDeEspera {
     #clientes: ItemFila[];
-    #historicoAtendimentos: number[];
+    #somaDeEsperas: number;
+    #atendimentos: number;
     #relogio: Relogio;
 
     constructor(relogio: Relogio = relogioDoSistema) {
         this.#clientes = [];
-        this.#historicoAtendimentos = [];
+        this.#somaDeEsperas = 0;
+        this.#atendimentos = 0;
         this.#relogio = relogio;
     }
 
@@ -30,7 +49,13 @@ export class FilaDeEspera {
             dataEntrada: this.#relogio.agora()
         };
         this.#clientes.push(novoCadastro);
-        return novoCadastro;
+        return retratar(novoCadastro);
+    }
+
+    /** Quem está na fila com este telefone, ou `null`. Só para leitura. */
+    consultar(telefone: string): ItemFila | null {
+        const item = this.#clientes.find((cadastro) => cadastro.cliente.telefone === telefone);
+        return item === undefined ? null : retratar(item);
     }
 
     remover(telefone: string): ItemFila | null {
@@ -40,7 +65,7 @@ export class FilaDeEspera {
             return null;
         }
         const [clienteRemovido] = this.#clientes.splice(index, 1);
-        return clienteRemovido ?? null;
+        return clienteRemovido === undefined ? null : retratar(clienteRemovido);
     }
 
     /**
@@ -52,36 +77,46 @@ export class FilaDeEspera {
         return this.#clientes.find((item) => item.cliente.quantidadePessoas <= capacidadeDaMesa) ?? null;
     }
 
-    /** Tira o item da fila e contabiliza quanto ele esperou. */
-    confirmarAtendimento(item: ItemFila): void {
-        const index = this.#clientes.indexOf(item);
-        if (index === -1) {
+    /**
+     * Tira o item da fila, contabiliza quanto ele esperou e devolve o retrato
+     * final. Casa pelo telefone, não pela identidade do objeto: quem chama
+     * recebe cópias congeladas, e exigir a instância interna deixaria a API
+     * dependente de um detalhe que ela mesma esconde.
+     *
+     * A espera é medida pela entrada guardada aqui, não pela do item recebido —
+     * assim ninguém de fora consegue inflar o tempo médio.
+     */
+    confirmarAtendimento(item: ItemFila): ItemFila {
+        const index = this.#clientes.findIndex(
+            (cadastro) => cadastro.cliente.telefone === item.cliente.telefone
+        );
+        const confirmado = index === -1 ? undefined : this.#clientes[index];
+        if (confirmado === undefined) {
             throw new ItemForaDaFila();
         }
         this.#clientes.splice(index, 1);
 
         const atendimento = this.#relogio.agora();
-        item.dataAtendimento = atendimento;
-        this.#historicoAtendimentos.push(
-            Math.floor((atendimento.getTime() - item.dataEntrada.getTime()) / 1000)
-        );
+        confirmado.dataAtendimento = atendimento;
+        this.#somaDeEsperas += Math.floor((atendimento.getTime() - confirmado.dataEntrada.getTime()) / 1000);
+        this.#atendimentos += 1;
+        return retratar(confirmado);
     }
 
     get tempoMedioDeEsperaEmSegundos(): number {
-        if (this.#historicoAtendimentos.length === 0) {
+        if (this.#atendimentos === 0) {
             return 0;
         }
-        const soma = this.#historicoAtendimentos.reduce((total, tempo) => total + tempo, 0);
-        return Math.round(soma / this.#historicoAtendimentos.length);
+        return Math.round(this.#somaDeEsperas / this.#atendimentos);
     }
 
     get tamanhoDaFila(): number {
         return this.#clientes.length;
     }
 
-    /** Cópia dos itens, na ordem de chegada. Para leitura. */
+    /** Cópias congeladas dos itens, na ordem de chegada. Para leitura. */
     itens(): ItemFila[] {
-        return this.#clientes.map((item) => ({ ...item }));
+        return this.#clientes.map(retratar);
     }
 
     estaVazia(): boolean {
@@ -112,12 +147,18 @@ export class FilaDeEspera {
             fila.#clientes.push(reconstituido);
         }
 
-        for (const segundos of estado.esperasEmSegundos) {
-            if (!Number.isFinite(segundos) || segundos < 0) {
-                throw new DadosInvalidos(`Espera registrada inválida: ${segundos}.`);
-            }
-            fila.#historicoAtendimentos.push(segundos);
+        const { somaEmSegundos, atendimentos } = estado.esperas;
+        if (!Number.isInteger(atendimentos) || atendimentos < 0) {
+            throw new DadosInvalidos(`Contagem de atendimentos inválida: ${atendimentos}.`);
         }
+        if (!Number.isFinite(somaEmSegundos) || somaEmSegundos < 0) {
+            throw new DadosInvalidos(`Soma de esperas inválida: ${somaEmSegundos}.`);
+        }
+        if (atendimentos === 0 && somaEmSegundos !== 0) {
+            throw new DadosInvalidos("Há soma de esperas sem nenhum atendimento contabilizado.");
+        }
+        fila.#somaDeEsperas = somaEmSegundos;
+        fila.#atendimentos = atendimentos;
 
         return fila;
     }
@@ -129,7 +170,7 @@ export class FilaDeEspera {
                 dataEntrada: item.dataEntrada.toISOString(),
                 dataAtendimento: item.dataAtendimento?.toISOString() ?? null
             })),
-            esperasEmSegundos: [...this.#historicoAtendimentos]
+            esperas: { somaEmSegundos: this.#somaDeEsperas, atendimentos: this.#atendimentos }
         };
     }
 }

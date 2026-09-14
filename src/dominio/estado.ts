@@ -34,10 +34,19 @@ export interface EstadoDoItemFila {
     dataAtendimento: string | null;
 }
 
+/**
+ * Esperas já contabilizadas, agregadas. Guardar a soma e a contagem em vez da
+ * lista inteira mantém o retrato do salão do mesmo tamanho depois de dez ou de
+ * dez mil atendimentos — o relatório só precisa da média.
+ */
+export interface EstadoDasEsperas {
+    somaEmSegundos: number;
+    atendimentos: number;
+}
+
 export interface EstadoDaFila {
     itens: EstadoDoItemFila[];
-    /** Esperas já contabilizadas, em segundos — a base do tempo médio. */
-    esperasEmSegundos: number[];
+    esperas: EstadoDasEsperas;
 }
 
 export interface EstadoDoSalao {

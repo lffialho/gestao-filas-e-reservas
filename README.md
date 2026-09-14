@@ -43,7 +43,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
-| `npm test` | 145 testes |
+| `npm test` | 193 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -59,6 +59,10 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_SEM_AUTENTICACAO` | — | `1` abre a API. Só para desenvolvimento |
 | `SALAO_BANCO` | — | Caminho de um arquivo SQLite. Sem ela o salão fica em memória e é perdido ao encerrar |
 
+Bancos criados por versões anteriores são atualizados sozinhos na primeira
+abertura: a tabela `esperas`, que guardava uma linha por atendimento, vira um
+resumo de uma linha só, com o mesmo tempo médio.
+
 **O serviço não sobe sem `SALAO_TOKEN`.** Uma API que opera o salão aberta por omissão é o
 tipo de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
 `SALAO_SEM_AUTENTICACAO=1`.
@@ -68,14 +72,18 @@ git, e o comando é o mesmo em qualquer sistema.
 
 ## API
 
-Autentique com `Authorization: Bearer <SALAO_TOKEN>` (ou `X-API-Key`). `/saude` fica aberta,
-para health check.
+Autentique com `Authorization: Bearer <SALAO_TOKEN>` (ou `X-API-Key`). O nome do esquema é
+case-insensitive, como manda a RFC 7235; o token, não. `/saude` fica aberta, para health
+check — e `HEAD` funciona em toda rota que aceita `GET`.
+
+Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
+`/fila/%2B5511999999999`.
 
 | Método | Rota | O que faz |
 | --- | --- | --- |
 | `GET` | `/saude` | Sinal de vida. Sem token |
 | `GET` | `/salao` | Relatório: ocupação, tempo médio de espera, fila e mesas |
-| `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }` |
+| `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }`. Se alguém na fila couber nela, já nasce reservada |
 | `GET` | `/mesas/:id` | Estado da mesa e quem a ocupa |
 | `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
 | `DELETE` | `/fila/:telefone` | Desistência: sai da fila |
@@ -88,7 +96,13 @@ para health check.
 
 `POST /chegadas` é a porta de entrada normal. `POST /mesas/:id/reserva` existe para o
 anfitrião escolher a mesa, e **continua respeitando a ordem de chegada**: se alguém na fila
-cabe naquela mesa, só ele pode recebê-la.
+cabe naquela mesa, só ele pode recebê-la — e quem senta é o cliente que já estava na fila,
+com a hora de chegada dele. Se o nome ou o tamanho do grupo do pedido não baterem com o que
+está na fila, a resposta é `409 IdentidadeDivergente` em vez de uma troca silenciosa.
+
+**O telefone é a identidade.** O mesmo número não pode estar em duas mesas, nem sentado e na
+fila ao mesmo tempo — é por ele que se desiste da fila e é para ele que o aviso de mesa
+pronta vai.
 
 ```bash
 curl -X POST localhost:3000/chegadas \
@@ -119,7 +133,7 @@ trate por ele, não pela mensagem. Campos extras vêm conforme o erro: `mesaId`,
 | `401` | Token ausente ou errado | `NaoAutenticado` |
 | `404` | Recurso não existe | `MesaNaoEncontrada`, `ClienteNaoEstaNaFila` |
 | `405` | Método não aceito no recurso | `MetodoNaoPermitido` |
-| `409` | Conflita com o estado atual do salão | `MesaIndisponivel`, `MesaJaDisponivel`, `FilaTemPrioridade`, `CapacidadeInsuficiente`, `ClienteJaNaFila` |
+| `409` | Conflita com o estado atual do salão | `MesaIndisponivel`, `MesaJaDisponivel`, `FilaTemPrioridade`, `CapacidadeInsuficiente`, `ClienteJaNaFila`, `ClienteJaNoSalao`, `IdentidadeDivergente`, `NumeroDeMesaDuplicado` |
 | `422` | Coerente, mas este salão nunca pode atender | `GrupoSemMesaPossivel`, `PosicaoForaDaPlanta`, `SalaoSemEspaco` |
 
 A diferença entre `409` e `422` é proposital: pedir uma mesa de 2 para um grupo de 4 conflita
@@ -204,7 +218,15 @@ consistência se define no salão inteiro, e é ele que se carrega e grava.
 SQLite é `BEGIN IMMEDIATE` com `ROLLBACK`; em memória é uma trava mais restauração do estado
 se a operação lançar. As duas implementações rodam a **mesma suíte de contrato**
 (`dominio/portas/contrato-do-repositorio.test.ts`) — é o que garante que trocar memória por
-banco não muda o que o domínio pode esperar.
+banco não muda o que o domínio pode esperar. A suíte cobre também o que o adaptador **não**
+pode fazer: guardar a `Mesa` que recebeu, ou devolver o item vivo da fila. Um adaptador que
+faça isso deixa o chamador mudar o salão fora da transação.
+
+**Leitura não é escrita.** `consulta` é a mesma porta sem gravação: `BEGIN DEFERRED` no
+SQLite, a trava sem fotografar o estado em memória. Enquanto todo `GET` passava por
+`transacao`, uma leitura tomava a trava de escrita do banco e reescrevia as tabelas — dois
+processos não conseguiam nem ler ao mesmo tempo. O `busy_timeout` do SQLite é 5s, e não o
+zero padrão, que faz qualquer disputa falhar na hora.
 
 **O tempo é injetável.** `Relogio` entra por construtor, então o tempo médio de espera é
 testado sem esperar de verdade. Nenhum teste depende de `sleep`.
@@ -227,6 +249,10 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   processo escrevendo.
 - **Não há provedor de mensagem ligado.** O aviso a quem sai da fila vai para o log; a porta
   `Notificador` está pronta para receber uma implementação de verdade.
+- **O aviso não tem outbox.** Ele sai depois do commit, como deve; mas se o processo cair
+  entre o commit e a chamada ao `Notificador`, a mesa fica alocada e ninguém é chamado — e
+  nada no estado registra que o aviso ficou pendente. Com um provedor de verdade ligado, é a
+  próxima peça a construir.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
-- Sem migrações de schema; o SQLite cria as tabelas se não existirem e nada versiona mudanças
-  futuras.
+- Sem migrações versionadas. Há uma migração pontual, da tabela `esperas` antiga para o
+  resumo, mas não um mecanismo geral para mudanças futuras.

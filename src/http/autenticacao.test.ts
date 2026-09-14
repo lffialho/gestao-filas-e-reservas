@@ -32,6 +32,24 @@ describe("autenticação por token", () => {
         assert.equal(autenticador.permite(requisicaoCom({})), false);
     });
 
+    // O nome do esquema é case-insensitive pela RFC 7235; o token não é.
+    it("aceita o esquema em qualquer caixa", () => {
+        for (const esquema of ["Bearer", "bearer", "BEARER", "BeArEr"]) {
+            assert.equal(
+                autenticador.permite(requisicaoCom({ authorization: `${esquema} segredo-da-equipe` })),
+                true,
+                esquema
+            );
+        }
+    });
+
+    it("não afrouxa a comparação do token", () => {
+        assert.equal(
+            autenticador.permite(requisicaoCom({ authorization: "bearer SEGREDO-DA-EQUIPE" })),
+            false
+        );
+    });
+
     it("recusa esquema que não é Bearer", () => {
         assert.equal(
             autenticador.permite(requisicaoCom({ authorization: "Basic segredo-da-equipe" })),
