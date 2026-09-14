@@ -112,12 +112,18 @@ tudo o que escrevemos morra. Rodar de novo atualiza em vez de duplicar.
 Cada tarefa tem **dois gatilhos**, e a diferença importa. O primeiro sobe o salão ao entrar na
 conta. O segundo repete a cada dois minutos, para sempre, e é o que garante que ele volte.
 
-A razão é medida, não teórica: com só o reinício-em-falha do Agendador (`RestartCount`), matar
+A razão é medida, não teórica. Com só o reinício-em-falha do Agendador (`RestartCount`), matar
 o processo do serviço deixou a tarefa parada em "Ready" e **o salão ficou fora do ar por 150
 segundos sem nenhuma tentativa de subir** — até ser levantado à mão. Reinício-em-falha cobre a
-tarefa que falha, não o processo que some. O gatilho de repetição cobre os dois: com
-`MultipleInstances = IgnoreNew` ele não faz nada enquanto o serviço está de pé, e o levanta em
-no máximo dois minutos morra como morrer.
+tarefa que falha, não o processo que some.
+
+Com os dois gatilhos, o mesmo teste — matar o `node` do serviço e não tocar em mais nada —
+**trouxe o salão de volta sozinho em 123 segundos**, dentro da janela de dois minutos. Com
+`MultipleInstances = IgnoreNew` a repetição não faz nada enquanto o serviço está de pé.
+
+Vale repetir esse teste depois de instalar, em cada casa: mate o `node` do serviço e confira
+que `http://localhost:3000/saude` volta a responder em até dois minutos. É o teste que separa
+"deve voltar sozinho" de "volta sozinho".
 
 `ferramentas\desinstalar-windows.ps1` tira as tarefas e **não toca no banco nem nas cópias**
 — desinstalar não pode ser o comando que apaga o histórico do restaurante.
@@ -554,12 +560,6 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`
   nem matam. A cópia periódica cobre o buraco; a mais recente pode ser de até seis horas
   atrás.
-- **O gatilho de repetição ainda não foi visto ressuscitando o serviço.** O que foi medido é o
-  problema que ele resolve — sem ele, o serviço morto ficou 150 s fora do ar sem nenhuma
-  tentativa de subir. A configuração nova registra sem erro, mas a prova de que o salão volta
-  sozinho pede uma máquina onde dê para registrar a tarefa e depois matar o processo: rode o
-  instalador elevado, mate o `node` do serviço e confira que em até dois minutos
-  `http://localhost:3000/saude` responde de novo.
 - **A duração da repetição não pode ser um `TimeSpan` enorme.** `[TimeSpan]::MaxValue` cria o
   gatilho sem reclamar e o Agendador **recusa o registro** com "valor fora do intervalo".
   Duração vazia é como ele escreve "para sempre". Fica anotado porque o erro só aparece no
