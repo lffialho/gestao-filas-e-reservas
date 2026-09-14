@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
   "files": {
-    "includes": ["src/**/*.ts", "web/**/*.ts"]
+    "includes": ["src/**/*.ts", "web/**/*.ts", "ferramentas/**/*.mjs"]
   },
   "formatter": {
     "enabled": true,
@@ -43,7 +43,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/**/*.test.ts"],
+      "includes": ["src/**/*.test.ts", "web/**/*.test.ts"],
       "linter": {
         "rules": {
           "suspicious": {
