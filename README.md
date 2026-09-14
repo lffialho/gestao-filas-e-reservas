@@ -44,7 +44,8 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
-| `npm test` | 219 testes |
+| `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
+| `npm test` | 278 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -61,6 +62,18 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_TOKEN` | — | Token da equipe, exigido em toda rota menos `/saude` |
 | `SALAO_SEM_AUTENTICACAO` | — | `1` abre a API. Só para desenvolvimento |
 | `SALAO_BANCO` | — | Caminho de um arquivo SQLite. Sem ela o salão fica em memória e é perdido ao encerrar |
+| `SALAO_BACKUP` | — | `0` desliga as cópias do banco |
+| `SALAO_BACKUP_PASTA` | `backups/` ao lado do banco | Onde as cópias ficam |
+| `SALAO_BACKUP_HORAS` | `6` | De quantas em quantas horas copiar |
+| `SALAO_BACKUP_COPIAS` | `28` | Quantas cópias guardar — 28 × 6 h ≈ uma semana |
+| `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
+| `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
+
+A porta do serviço aparece em duas variáveis — `PORTA`, para ele, e `SALAO_API`, para o
+painel achá-lo — e o `.env.example` já traz as duas preenchidas. **Mudar uma sem mudar a
+outra** deixa o painel batendo numa porta vazia: ele sobe, a tela abre e nada carrega.
+`npm run tudo` confere isso antes de subir e recusa com a mensagem certa; `npm start` e
+`npm run web`, rodados separados, não têm como conferir.
 
 Bancos criados por versões anteriores são atualizados sozinhos na primeira
 abertura: a tabela `esperas`, que guardava uma linha por atendimento, vira um
@@ -72,6 +85,53 @@ tipo de padrão que só se descobre errado depois; abrir tem de ser escolha decl
 
 O jeito recomendado é pôr tudo no `.env` e usar `npm run start:env`. O arquivo fica fora do
 git, e o comando é o mesmo em qualquer sistema.
+
+## Instalar na máquina do balcão
+
+Rodar na mão, com `npm run tudo:env`, serve para testar. Numa casa que abre todo dia o salão
+tem de subir sozinho ao ligar o computador e voltar sozinho se cair — às 21h de sábado não
+há ninguém olhando para o terminal.
+
+```powershell
+npm install
+npm run build
+npm run web:build
+Copy-Item .env.example .env     # preencha SALAO_TOKEN e SALAO_BANCO
+powershell -ExecutionPolicy Bypass -File ferramentas\instalar-windows.ps1
+```
+
+O script confere o que precisa estar pronto — Node 22 ou mais novo, os dois builds, o `.env`
+com token — e só então registra duas tarefas no Agendador do Windows, uma para o serviço e
+outra para o painel, que sobem ao entrar na conta e reiniciam sozinhas se o processo morrer.
+Quem supervisiona é o próprio Windows, e não um script nosso: se ninguém estiver olhando, é
+o agendador que precisa levantar o serviço, e ele continua de pé mesmo que tudo o que
+escrevemos morra. Rodar de novo atualiza em vez de duplicar.
+
+`ferramentas\desinstalar-windows.ps1` tira as tarefas e **não toca no banco nem nas cópias**
+— desinstalar não pode ser o comando que apaga o histórico do restaurante.
+
+### As cópias do banco
+
+O estado do salão é o registro operacional da casa num arquivo só. Uma cópia é gravada ao
+subir e a cada seis horas, na pasta `backups/` ao lado do banco. Sai por
+`VACUUM INTO`, que é a forma que o próprio SQLite dá para copiar um banco **em uso**: a cópia
+vem de uma leitura transacional e nunca contém metade de uma operação. Copiar o `.db` por
+fora, com `Copy-Item`, pode pegá-lo no meio de uma escrita e gerar um arquivo que não abre —
+e seria justamente no sábado cheio que isso aconteceria.
+
+**Uma cópia no mesmo disco não protege contra o disco morrer.** Ela cobre corrupção, engano
+e erro de operação, que é a maioria dos casos. Para o resto, aponte um OneDrive, um Google
+Drive ou um pendrive para a pasta das cópias: são arquivos comuns, qualquer sincronismo
+serve, e isso é o que transforma cópia local em backup de verdade.
+
+O serviço ainda tenta uma última cópia ao encerrar, mas **não conte com ela no Windows**:
+parar a tarefa no Agendador encerra o processo sem entregar sinal nenhum, e o código de
+encerramento não chega a rodar. Quem garante é a cópia periódica. Na prática: a cópia mais
+recente pode ser de até seis horas atrás, e é por isso que o intervalo é a variável que
+vale a pena mexer (`SALAO_BACKUP_HORAS`) numa casa de movimento.
+
+Para restaurar: pare o serviço, troque o arquivo do banco pela cópia escolhida (o nome traz
+a data e a hora em UTC), suba de novo.
 
 ## API
 
@@ -90,6 +150,7 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 | `GET` | `/eventos` | O diário cru do período — `?de=<ISO>&ate=<ISO>&limite=<1..500>` |
 | `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }`. Se alguém na fila couber nela, já nasce reservada |
 | `GET` | `/mesas/:id` | Estado da mesa e quem a ocupa |
+| `DELETE` | `/mesas/:id` | Tira a mesa da planta. Mesa ocupada ou já chamada não sai |
 | `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
 | `GET` | `/chegadas/previa` | Onde esse grupo iria parar, sem mudar nada — `?pessoas=N&telefone=<opcional>` |
 | `DELETE` | `/fila/:telefone` | Desistência: sai da fila |
@@ -175,7 +236,7 @@ trate por ele, não pela mensagem. Campos extras vêm conforme o erro: `mesaId`,
 | `401` | Token ausente ou errado | `NaoAutenticado` |
 | `404` | Recurso não existe | `MesaNaoEncontrada`, `ClienteNaoEstaNaFila` |
 | `405` | Método não aceito no recurso | `MetodoNaoPermitido` |
-| `409` | Conflita com o estado atual do salão | `MesaIndisponivel`, `MesaJaDisponivel`, `FilaTemPrioridade`, `CapacidadeInsuficiente`, `ClienteJaNaFila`, `ClienteJaNoSalao`, `IdentidadeDivergente`, `NumeroDeMesaDuplicado` |
+| `409` | Conflita com o estado atual do salão | `MesaIndisponivel`, `MesaJaDisponivel`, `MesaEmUso`, `FilaTemPrioridade`, `CapacidadeInsuficiente`, `ClienteJaNaFila`, `ClienteJaNoSalao`, `IdentidadeDivergente`, `NumeroDeMesaDuplicado` |
 | `422` | Coerente, mas este salão nunca pode atender | `GrupoSemMesaPossivel`, `PosicaoForaDaPlanta`, `SalaoSemEspaco` |
 
 A diferença entre `409` e `422` é proposital: pedir uma mesa de 2 para um grupo de 4 conflita
@@ -246,6 +307,27 @@ mesa 3", "Entra na fila, na posição 2", "Este telefone já está na mesa 3". E
 de `GET /chegadas/previa`, não de um cálculo aqui — a razão está na seção da API. O botão
 continua valendo mesmo quando a prévia recusa: a prévia é um retrato de alguns segundos
 atrás, e quem decide de verdade é o serviço, no momento do envio.
+
+### Montar o salão
+
+**Montar salão** liga um modo à parte, e é à parte de propósito: quem opera clica em mesa a
+noite inteira para sentar e liberar gente, e se arrastar também mexesse na planta um dedo
+escorregando no tablet mudaria o salão no meio do movimento. Ligado o modo, a planta muda de
+cara, clicar não senta ninguém, e dá para:
+
+- **pôr mesa** — número já sugerido no menor livre, lugares, e ela entra no primeiro espaço
+  vago da planta;
+- **arrastar** para o lugar dela, com o dedo ou o mouse, encaixando no ladrilho;
+- **tirar da planta** — só mesa livre. Mesa ocupada, ou já chamada para alguém que está a
+  caminho, não sai: sumiria com um atendimento em curso sem ninguém decidir o que fazer com
+  quem está lá.
+
+Enquanto uma mesa está na mão, a atualização automática não troca a planta por baixo dela —
+é a mesma disciplina da caixa de busca e da janela de ação, aplicada ao arrasto.
+
+Tirar mesa da planta não apaga o passado dela: cada evento do diário carrega o número e a
+capacidade que a mesa tinha no momento em que aconteceu, justamente para que mexer na planta
+hoje não mude o relatório de ontem.
 
 ### Fechar o dia
 
@@ -424,9 +506,23 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
 - **O painel atualiza por polling**, quatro leituras a cada três segundos. Numa casa e num
   painel só isso é irrelevante; com muitos painéis abertos, o caminho é o servidor do painel
   empurrar as mudanças em vez de cada aba perguntar.
-- **O painel não cadastra nem arrasta mesas.** A planta desenha a posição que o serviço
-  guarda, e `POST /mesas` e `POST /mesas/:id/posicao` continuam sendo trabalho de quem monta
-  o salão pela API.
+- **Não dá para mudar número ou lugares de uma mesa que já existe**, só pôr e tirar. Montar
+  o salão errado custa apagar e refazer — o que não perde nada do diário, mas é chato.
+- **As cópias do banco ficam no mesmo disco** e não protegem contra o disco morrer. Sincronizar
+  a pasta para fora resolve, e é manual.
+- **Não há cópia no encerramento quando o Windows encerra o processo à força**, que é o
+  caso normal: parar a tarefa no Agendador não entrega sinal nenhum ao Node. Medido —
+  `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`
+  nem matam. A cópia periódica cobre o buraco; a mais recente pode ser de até seis horas
+  atrás.
+- **Do script de instalação do Windows, só as conferências foram executadas de verdade.**
+  Num Windows 11 real: caminhos, detecção do Node e as cinco recusas (sem build, build pela
+  metade, sem `.env`, `.env` sem `SALAO_TOKEN`, token vazio) param com a mensagem certa. O
+  registro das tarefas em si nunca rodou — foi substituído por dublês, porque mexe no
+  Agendador da máquina. Ele é idempotente, mas a primeira execução de verdade ainda é a
+  primeira.
+- **Só Windows.** Não há equivalente para Linux ou macOS; num Linux, `systemd --user` faria o
+  mesmo papel.
 - **O CSV do diário para em 500 eventos**, que é o teto de `/eventos`. Um dia cabe com folga;
   um intervalo longo não, e a tela avisa quantos ficaram de fora em vez de entregar um
   arquivo cortado em silêncio. Exportar período grande pede paginação, que não existe.
