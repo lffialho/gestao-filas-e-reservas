@@ -258,6 +258,99 @@ describe("MotorGerente", () => {
         });
     });
 
+    describe("preverRecepcao — diz o que aconteceria, sem fazer", () => {
+        /**
+         * A prova que importa. Para cada estado interessante, a prévia e a
+         * chegada de verdade dizem a mesma coisa — é o que garante que o painel
+         * nunca prometa uma mesa que o salão não daria. Se alguém mudar a regra
+         * de alocação num lugar só, este teste cai.
+         */
+        it("concorda com receberCliente em cada estado do salão", async () => {
+            const motor = montarMotor();
+
+            const conferir = async (nome: string, pessoas: number, telefone: string): Promise<void> => {
+                const previsto = await motor.preverRecepcao(pessoas, telefone);
+                const real = await motor.receberCliente(cliente(nome, pessoas, telefone));
+
+                assert.equal(previsto.destino, real.destino, `${nome}: destino`);
+                if (real.destino === "mesa") {
+                    assert.equal(previsto.mesa?.id, real.mesa.id, `${nome}: mesa`);
+                } else {
+                    assert.equal(previsto.posicao, real.posicao, `${nome}: posição na fila`);
+                }
+            };
+
+            await conferir("Casal", 2, "1111"); // m2, a menor que serve
+            await conferir("Quarteto", 4, "2222"); // m1
+            await conferir("Trio", 3, "3333"); // nada livre: fila
+            await conferir("Outro casal", 2, "4444"); // fila, atrás do trio
+        });
+
+        it("não muda nada no salão", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Casal", 2, "1111"));
+            const antes = await motor.gerarRelatorio();
+
+            await motor.preverRecepcao(2, "9999");
+            await motor.preverRecepcao(4, "8888");
+            await motor.preverRecepcao(20, null);
+
+            assert.deepEqual(await motor.gerarRelatorio(), antes);
+        });
+
+        it("sem telefone, responde só pelo tamanho do grupo", async () => {
+            const motor = montarMotor();
+            const previsao = await motor.preverRecepcao(2, null);
+
+            assert.equal(previsao.destino, "mesa");
+            assert.equal(previsao.mesa?.id, "m2");
+        });
+
+        it("recusa telefone já sentado, dizendo em que mesa está", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+
+            const previsao = await motor.preverRecepcao(2, "1111");
+
+            assert.equal(previsao.destino, "recusa");
+            assert.equal(previsao.motivo, "ClienteJaNoSalao");
+            assert.equal(previsao.mesa?.id, "m2", "aponta a mesa onde o telefone já está");
+        });
+
+        it("recusa telefone que já espera na fila", async () => {
+            const motor = montarMotor();
+            await motor.entrarNaFila(cliente("Ana", 2, "1111"));
+
+            const previsao = await motor.preverRecepcao(2, "1111");
+
+            assert.equal(previsao.destino, "recusa");
+            assert.equal(previsao.motivo, "ClienteJaNaFila");
+        });
+
+        it("recusa grupo maior que a maior mesa do salão", async () => {
+            const motor = montarMotor();
+            const previsao = await motor.preverRecepcao(20, "1111");
+
+            assert.equal(previsao.destino, "recusa");
+            assert.equal(previsao.motivo, "GrupoSemMesaPossivel");
+        });
+
+        // A regra sutil: uma mesa livre é descartada se alguém que já espera
+        // também caberia nela. A prévia tem de dizer "fila" mesmo com o salão
+        // inteiro vazio à vista.
+        it("respeita a ordem de chegada, e não só as mesas livres", async () => {
+            const motor = montarMotor();
+            await motor.entrarNaFila(cliente("Casal que espera", 2, "1111"));
+
+            const previsao = await motor.preverRecepcao(2, "2222");
+            assert.equal(previsao.destino, "fila", "as duas mesas estão livres, mas há fila");
+            assert.equal(previsao.posicao, 2);
+
+            const real = await motor.receberCliente(cliente("Recem-chegado", 2, "2222"));
+            assert.equal(real.destino, "fila", "a chegada de verdade concorda");
+        });
+    });
+
     describe("taxa de ocupação", () => {
         it("é zero sem mesas cadastradas", async () => {
             assert.equal(await motorVazio().taxaDeOcupacao(), 0);

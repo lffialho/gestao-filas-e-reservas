@@ -52,6 +52,22 @@ export interface ResultadoReserva {
     status: StatusMesa;
 }
 
+/**
+ * O que aconteceria se este grupo chegasse agora. Três campos, cada um com um
+ * trabalho: `mesa` diz onde sentaria — ou, numa recusa por telefone repetido,
+ * onde esse telefone já está; `posicao` só existe quando o destino é a fila; e
+ * `motivo` é o mesmo `tipo` do erro que a chegada de verdade lançaria.
+ *
+ * O texto a mostrar não vem daqui: quem apresenta é que escolhe as palavras, e
+ * repetir a frase do erro nesta camada seria uma segunda cópia para manter.
+ */
+export interface Previsao {
+    destino: "mesa" | "fila" | "recusa";
+    mesa: InfoMesa | null;
+    posicao: number | null;
+    motivo: string | null;
+}
+
 /** O cliente foi recebido: ou sentou numa mesa, ou entrou na fila. */
 export type ResultadoRecepcao =
     | { destino: "mesa"; mesa: InfoMesa }
@@ -382,6 +398,44 @@ export class Salao {
     }
 
     /**
+     * Onde este grupo iria parar, sem mudar nada.
+     *
+     * Chama exatamente o mesmo `#melhorMesaLivrePara` que `receberCliente`, e é
+     * essa a razão de a prévia morar aqui e não na tela: a decisão é uma só, e
+     * uma segunda cópia da regra no painel passaria a discordar desta no dia em
+     * que a regra mudasse. As recusas também são as mesmas — os erros que
+     * `receberCliente` lançaria, ditos em vez de lançados, porque a pergunta
+     * aqui é "o que aconteceria", e não "faça".
+     *
+     * Sem telefone, responde só pelo tamanho do grupo: é o que dá para dizer
+     * enquanto alguém ainda está digitando.
+     */
+    preverRecepcao(pessoas: number, telefone: string | null): Previsao {
+        const nada = { mesa: null, posicao: null, motivo: null };
+
+        if (telefone !== null && telefone.trim() !== "") {
+            const jaSentado = this.#mesaDoTelefone(telefone);
+            if (jaSentado !== null) {
+                return { ...nada, destino: "recusa", motivo: "ClienteJaNoSalao", mesa: retratar(jaSentado) };
+            }
+            if (this.#filaDeEspera.consultar(telefone) !== null) {
+                return { ...nada, destino: "recusa", motivo: "ClienteJaNaFila" };
+            }
+        }
+
+        if (pessoas > this.maiorCapacidade) {
+            return { ...nada, destino: "recusa", motivo: "GrupoSemMesaPossivel" };
+        }
+
+        const mesa = this.#melhorMesaLivrePara(pessoas);
+        if (mesa !== null) {
+            return { ...nada, destino: "mesa", mesa: retratar(mesa) };
+        }
+
+        return { ...nada, destino: "fila", posicao: this.tamanhoFila + 1 };
+    }
+
+    /**
      * Porta de entrada do salão: senta o cliente na melhor mesa livre ou o
      * coloca na fila. É aqui que a ordem de chegada é garantida.
      */
@@ -393,7 +447,7 @@ export class Salao {
             throw new GrupoSemMesaPossivel(cliente.quantidadePessoas, maior);
         }
 
-        const mesa = this.#melhorMesaLivrePara(cliente);
+        const mesa = this.#melhorMesaLivrePara(cliente.quantidadePessoas);
         if (mesa !== null) {
             mesa.reservar(cliente);
             this.#registrarChegadaEmMesa("sentou_direto", mesa, cliente);
@@ -413,9 +467,9 @@ export class Salao {
      * Quem chega aqui nunca está na fila: `receberCliente` já recusou o
      * telefone repetido antes de chamar.
      */
-    #melhorMesaLivrePara(cliente: Cliente): Mesa | null {
+    #melhorMesaLivrePara(pessoas: number): Mesa | null {
         const candidatas = Array.from(this.#mesas.values())
-            .filter((mesa) => mesa.estaDisponivel && mesa.podeAcomodar(cliente.quantidadePessoas))
+            .filter((mesa) => mesa.estaDisponivel && mesa.podeAcomodar(pessoas))
             .sort((a, b) => a.capacidade - b.capacidade);
 
         for (const mesa of candidatas) {

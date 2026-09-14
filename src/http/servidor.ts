@@ -100,6 +100,16 @@ function limiteDe(consulta: URLSearchParams): number {
     return valor;
 }
 
+/** Tamanho do grupo vindo da query, para a prévia da recepção. */
+function pessoasDaConsulta(consulta: URLSearchParams): number {
+    const bruto = consulta.get("pessoas");
+    const valor = Number(bruto);
+    if (bruto === null || bruto.trim() === "" || !Number.isInteger(valor) || valor < 1) {
+        throw new DadosInvalidos('O parâmetro "pessoas" é obrigatório e deve ser um inteiro positivo.');
+    }
+    return valor;
+}
+
 function clienteDoCorpo(corpo: Corpo): Cliente {
     return new Cliente(texto(corpo, "nome"), inteiro(corpo, "pessoas"), texto(corpo, "telefone"));
 }
@@ -175,6 +185,20 @@ function rotas(motor: MotorGerente): Rota[] {
         rota("POST", "/chegadas", async ({ corpo }) => ({
             status: 201,
             corpo: recepcaoJson(await motor.receberCliente(clienteDoCorpo(corpo)))
+        })),
+
+        /**
+         * Onde este grupo iria parar, se chegasse agora. Leitura pura: nada
+         * muda no salão, e a resposta sai do mesmo cálculo que `POST /chegadas`
+         * faria — é para poder mostrar o destino a quem ainda está digitando
+         * sem arriscar que a tela e o salão discordem.
+         *
+         * O telefone é opcional: sem ele a resposta considera só o tamanho do
+         * grupo, que já é o suficiente na maior parte do preenchimento.
+         */
+        rota("GET", "/chegadas/previa", async ({ consulta }) => ({
+            status: 200,
+            corpo: await motor.preverRecepcao(pessoasDaConsulta(consulta), consulta.get("telefone"))
         })),
 
         /** Desistência de quem estava na fila. */
