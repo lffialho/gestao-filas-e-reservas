@@ -636,6 +636,32 @@ describe("API HTTP", () => {
             assert.equal(json.status, "DISPONIVEL");
         });
 
+        it("remove a mesa livre e devolve o retrato dela", async () => {
+            await api().pedir("POST", "/mesas", { id: "descartavel", numero: 7, capacidade: 2 });
+
+            const { status, json } = await api().pedir("DELETE", "/mesas/descartavel");
+            assert.equal(status, 200);
+            assert.equal(json.numero, 7);
+
+            const depois = await api().pedir("GET", "/mesas/descartavel");
+            assert.equal(depois.status, 404);
+        });
+
+        it("409 ao remover mesa com gente nela", async () => {
+            await api().pedir("POST", "/chegadas", { nome: "Ana", pessoas: 2, telefone: "9090" });
+
+            const { status, json } = await api().pedir("DELETE", "/mesas/m1");
+            assert.equal(status, 409);
+            assert.equal(json.erro.tipo, "MesaEmUso");
+            assert.equal(json.erro.mesaId, "m1");
+        });
+
+        it("404 ao remover mesa que não existe", async () => {
+            const { status, json } = await api().pedir("DELETE", "/mesas/m99");
+            assert.equal(status, 404);
+            assert.equal(json.erro.tipo, "MesaNaoEncontrada");
+        });
+
         it("409 quando o número da mesa já existe", async () => {
             const { status, json } = await api().pedir("POST", "/mesas", {
                 id: "outra",

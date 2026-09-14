@@ -170,6 +170,12 @@ function rotas(motor: MotorGerente): Rota[] {
             return { status: 201, corpo: criada };
         }),
 
+        /** Tira a mesa da planta. Mesa ocupada ou já chamada não sai. */
+        rota("DELETE", "/mesas/:id", async ({ parametros }) => ({
+            status: 200,
+            corpo: await motor.removerMesa(parametros["id"] ?? "")
+        })),
+
         rota("GET", "/mesas/:id", async ({ parametros }) => {
             const mesa = await motor.consultarMesa(parametros["id"] ?? "");
             if (mesa === undefined) {
