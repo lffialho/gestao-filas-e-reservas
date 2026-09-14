@@ -49,6 +49,33 @@ const media = (soma: number, quantidade: number): number =>
     quantidade === 0 ? 0 : Math.round(soma / quantidade);
 
 /**
+ * Acumula um giro: um grupo que sentou e foi embora. Separado do laço porque é
+ * a única parte que olha para dentro de uma mesa — o resto do resumo só conta.
+ */
+function acumularGiro(mesas: Map<string, Acumulador>, evento: EventoDoSalao): void {
+    if (evento.mesaId === null) {
+        return;
+    }
+
+    const capacidade = evento.capacidade ?? 0;
+    const anterior = mesas.get(evento.mesaId) ?? {
+        mesaId: evento.mesaId,
+        mesaNumero: evento.mesaNumero ?? 0,
+        capacidade,
+        giros: 0,
+        somaPermanencia: 0,
+        somaAproveitamento: 0
+    };
+
+    anterior.giros += 1;
+    anterior.somaPermanencia += evento.permanenciaEmSegundos ?? 0;
+    anterior.somaAproveitamento += capacidade === 0 ? 0 : ((evento.pessoas ?? 0) / capacidade) * 100;
+    anterior.capacidade = capacidade;
+    anterior.mesaNumero = evento.mesaNumero ?? anterior.mesaNumero;
+    mesas.set(evento.mesaId, anterior);
+}
+
+/**
  * Transforma o diário em números. Fica no domínio, e não no adaptador, porque
  * é regra de leitura do negócio: testar "o pico da fila foi 3" não pode exigir
  * um banco.
@@ -68,51 +95,50 @@ export function resumirPeriodo(eventos: readonly EventoDoSalao[]): ResumoDoPerio
 
     const mesas = new Map<string, Acumulador>();
 
+    // Um caso por tipo de evento, e cada tipo aparece uma vez só. "Atendido" é
+    // sentar: ou direto, ou chamado da fila — os dois casos contam o grupo, e
+    // só o segundo tem espera para somar.
     for (const evento of emOrdem) {
-        if (evento.tipo === "sentou_direto" || evento.tipo === "chamado") {
-            gruposAtendidos += 1;
-            pessoasAtendidas += evento.pessoas ?? 0;
-        }
+        switch (evento.tipo) {
+            case "sentou_direto":
+                gruposAtendidos += 1;
+                pessoasAtendidas += evento.pessoas ?? 0;
+                break;
 
-        if (evento.tipo === "chamado") {
-            const espera = evento.esperaEmSegundos ?? 0;
-            somaEspera += espera;
-            quantasEsperas += 1;
-            maiorEsperaSegundos = Math.max(maiorEsperaSegundos, espera);
-            naFila = Math.max(0, naFila - 1);
-        }
+            case "chamado": {
+                gruposAtendidos += 1;
+                pessoasAtendidas += evento.pessoas ?? 0;
 
-        if (evento.tipo === "entrou_na_fila") {
-            naFila += 1;
-            picoDaFila = Math.max(picoDaFila, naFila);
-        }
+                const espera = evento.esperaEmSegundos ?? 0;
+                somaEspera += espera;
+                quantasEsperas += 1;
+                maiorEsperaSegundos = Math.max(maiorEsperaSegundos, espera);
+                naFila = Math.max(0, naFila - 1);
+                break;
+            }
 
-        if (evento.tipo === "saiu_da_fila") {
-            desistencias += 1;
-            naFila = Math.max(0, naFila - 1);
-        }
+            case "entrou_na_fila":
+                naFila += 1;
+                picoDaFila = Math.max(picoDaFila, naFila);
+                break;
 
-        if (evento.tipo === "reserva_cancelada") {
-            reservasCanceladas += 1;
-        }
+            case "saiu_da_fila":
+                desistencias += 1;
+                naFila = Math.max(0, naFila - 1);
+                break;
 
-        if (evento.tipo === "liberou" && evento.mesaId !== null) {
-            const capacidade = evento.capacidade ?? 0;
-            const anterior = mesas.get(evento.mesaId) ?? {
-                mesaId: evento.mesaId,
-                mesaNumero: evento.mesaNumero ?? 0,
-                capacidade,
-                giros: 0,
-                somaPermanencia: 0,
-                somaAproveitamento: 0
-            };
-            anterior.giros += 1;
-            anterior.somaPermanencia += evento.permanenciaEmSegundos ?? 0;
-            anterior.somaAproveitamento +=
-                capacidade === 0 ? 0 : ((evento.pessoas ?? 0) / capacidade) * 100;
-            anterior.capacidade = capacidade;
-            anterior.mesaNumero = evento.mesaNumero ?? anterior.mesaNumero;
-            mesas.set(evento.mesaId, anterior);
+            case "reserva_cancelada":
+                reservasCanceladas += 1;
+                break;
+
+            case "liberou":
+                acumularGiro(mesas, evento);
+                break;
+
+            // `mesa_cadastrada` não entra em nenhuma conta: a mesa existir não
+            // é atendimento nem espera.
+            default:
+                break;
         }
     }
 

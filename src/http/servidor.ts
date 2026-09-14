@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Cliente } from "../dominio/entidades/cliente.js";
 import { Mesa } from "../dominio/entidades/mesa.js";
 import { DadosInvalidos } from "../dominio/erros.js";
+import type { Periodo } from "../dominio/eventos.js";
 import type { MotorGerente } from "../dominio/servicos/motor-gerente.js";
 import { descreverErro, registradorSilencioso, type Registrador } from "../compartilhado/log/registrador.js";
 import { autenticadorAberto, type Autenticador } from "./autenticacao.js";
@@ -10,6 +11,12 @@ import { itemFilaJson, liberacaoJson, recepcaoJson, reservaJson } from "./repres
 
 /** Teto do corpo da requisição: sem isso um cliente pode esgotar a memória. */
 const LIMITE_DO_CORPO_EM_BYTES = 64 * 1024;
+
+/** Quantos eventos `/eventos` devolve quando ninguém pede um número. */
+const EVENTOS_POR_PADRAO = 50;
+
+/** Teto de `limite`. Quem quer o dia inteiro pede o resumo, que já vem somado. */
+const TETO_DE_EVENTOS = 500;
 
 type Corpo = Record<string, unknown>;
 
@@ -70,6 +77,29 @@ function instante(consulta: URLSearchParams, campo: string): Date {
     return data;
 }
 
+/** Período `[de, ate)` vindo da query. Quem chama é que sabe onde começa o dia. */
+function periodoDe(consulta: URLSearchParams): Periodo {
+    const inicio = instante(consulta, "de");
+    const fim = instante(consulta, "ate");
+    if (fim.getTime() <= inicio.getTime()) {
+        throw new DadosInvalidos('O parâmetro "ate" tem de ser depois de "de".');
+    }
+    return { inicio, fim };
+}
+
+/** `limite` da query, opcional. Fora da faixa é erro — corrigir calado esconde bug. */
+function limiteDe(consulta: URLSearchParams): number {
+    const bruto = consulta.get("limite");
+    if (bruto === null || bruto.trim() === "") {
+        return EVENTOS_POR_PADRAO;
+    }
+    const valor = Number(bruto);
+    if (!Number.isInteger(valor) || valor < 1 || valor > TETO_DE_EVENTOS) {
+        throw new DadosInvalidos(`O parâmetro "limite" deve ser um inteiro entre 1 e ${TETO_DE_EVENTOS}.`);
+    }
+    return valor;
+}
+
 function clienteDoCorpo(corpo: Corpo): Cliente {
     return new Cliente(texto(corpo, "nome"), inteiro(corpo, "pessoas"), texto(corpo, "telefone"));
 }
@@ -95,13 +125,27 @@ function rotas(motor: MotorGerente): Rota[] {
          * Fechamento do período. As bordas vêm de quem chama, em ISO: só o
          * cliente sabe onde começa "hoje" no fuso do restaurante.
          */
-        rota("GET", "/relatorio", async ({ consulta }) => {
-            const inicio = instante(consulta, "de");
-            const fim = instante(consulta, "ate");
-            if (fim.getTime() <= inicio.getTime()) {
-                throw new DadosInvalidos('O parâmetro "ate" tem de ser depois de "de".');
-            }
-            return { status: 200, corpo: await motor.resumirPeriodo({ inicio, fim }) };
+        rota("GET", "/relatorio", async ({ consulta }) => ({
+            status: 200,
+            corpo: await motor.resumirPeriodo(periodoDe(consulta))
+        })),
+
+        /**
+         * O diário cru, do mais recente para o mais antigo — a ordem em que se
+         * lê um diário aberto no balcão.
+         *
+         * `limite` corta a resposta, não a leitura: o repositório lê o período
+         * inteiro de qualquer jeito, e o corte existe para o painel não
+         * arrastar o dia todo a cada atualização.
+         */
+        rota("GET", "/eventos", async ({ consulta }) => {
+            const limite = limiteDe(consulta);
+            const todos = await motor.eventos(periodoDe(consulta));
+            const recentesPrimeiro = [...todos].sort((a, b) => b.momento.localeCompare(a.momento));
+            return {
+                status: 200,
+                corpo: { itens: recentesPrimeiro.slice(0, limite), total: todos.length }
+            };
         }),
 
         rota("GET", "/fila", async () => ({

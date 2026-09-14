@@ -590,9 +590,7 @@ export class Salao {
         }
 
         // Lido antes de liberar: `liberar` recarimba o `desde` da mesa.
-        const permanencia = Math.floor(
-            (this.#relogio.agora().getTime() - mesa.desde.getTime()) / 1000
-        );
+        const permanencia = Math.floor((this.#relogio.agora().getTime() - mesa.desde.getTime()) / 1000);
         const clienteAnterior = mesa.liberar();
         this.#registrar(tipo, {
             mesaId: mesa.id,

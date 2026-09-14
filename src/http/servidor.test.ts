@@ -529,10 +529,7 @@ describe("API HTTP", () => {
         });
 
         it("400 quando a data não é ISO", async () => {
-            const { status } = await api().pedir(
-                "GET",
-                "/relatorio?de=ontem&ate=2100-01-01T00:00:00.000Z"
-            );
+            const { status } = await api().pedir("GET", "/relatorio?de=ontem&ate=2100-01-01T00:00:00.000Z");
             assert.equal(status, 400);
         });
 
@@ -542,6 +539,48 @@ describe("API HTTP", () => {
                 "/relatorio?de=2026-01-02T00:00:00.000Z&ate=2026-01-01T00:00:00.000Z"
             );
             assert.equal(status, 400);
+        });
+    });
+
+    describe("diário de eventos", () => {
+        const api = comApiPropria();
+        const tudo = "de=1970-01-01T00:00:00.000Z&ate=2100-01-01T00:00:00.000Z";
+
+        it("devolve os fatos do mais recente para o mais antigo", async () => {
+            await api().pedir("POST", "/chegadas", { nome: "Ana", pessoas: 2, telefone: "1" });
+            await api().pedir("POST", "/mesas/m1/liberacao");
+
+            const { status, json } = await api().pedir("GET", `/eventos?${tudo}`);
+
+            assert.equal(status, 200);
+            assert.equal(json.total, 2);
+            assert.deepEqual(
+                json.itens.map((evento: any) => evento.tipo),
+                ["liberou", "sentou_direto"]
+            );
+            assert.equal(json.itens[0].mesaNumero, 1);
+            assert.equal(json.itens[1].nome, "Ana");
+        });
+
+        it("limite corta a resposta mas conta o período inteiro", async () => {
+            const { json } = await api().pedir("GET", `/eventos?${tudo}&limite=1`);
+
+            assert.equal(json.itens.length, 1);
+            assert.equal(json.itens[0].tipo, "liberou", "o corte é do fim mais novo");
+            assert.equal(json.total, 2, "total é do período, não da fatia");
+        });
+
+        it("400 quando o limite não é um inteiro na faixa", async () => {
+            for (const limite of ["0", "501", "2,5", "muitos"]) {
+                const { status } = await api().pedir("GET", `/eventos?${tudo}&limite=${limite}`);
+                assert.equal(status, 400, `limite=${limite} deveria ser recusado`);
+            }
+        });
+
+        it("400 sem as bordas do período", async () => {
+            const { status, json } = await api().pedir("GET", "/eventos");
+            assert.equal(status, 400);
+            assert.equal(json.erro.tipo, "DadosInvalidos");
         });
     });
 
