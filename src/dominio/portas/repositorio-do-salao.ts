@@ -1,4 +1,5 @@
 import type { Salao } from "../entidades/salao.js";
+import type { EventoDoSalao, Periodo } from "../eventos.js";
 
 /**
  * Porta de saída do domínio: onde o salão é guardado.
@@ -30,4 +31,14 @@ import type { Salao } from "../entidades/salao.js";
 export interface RepositorioDoSalao {
     transacao<T>(operacao: (salao: Salao) => T): Promise<T>;
     consulta<T>(leitura: (salao: Salao) => T): Promise<T>;
+
+    /**
+     * O diário do período, em ordem. Quem grava é `transacao`, na mesma
+     * transação do estado: evento escrito depois sobreviveria a um rollback e
+     * o relatório passaria a contar atendimento que não houve.
+     *
+     * Só leitura, e por isso fora de `consulta`: o diário não é o agregado, é
+     * o que já aconteceu com ele.
+     */
+    eventos(periodo: Periodo): Promise<EventoDoSalao[]>;
 }

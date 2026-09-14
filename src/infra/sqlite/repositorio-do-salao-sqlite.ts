@@ -3,6 +3,7 @@ import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogi
 import type { Mesa, StatusMesa } from "../../dominio/entidades/mesa.js";
 import { Salao } from "../../dominio/entidades/salao.js";
 import type { EstadoDaMesa, EstadoDoItemFila, EstadoDoSalao } from "../../dominio/estado.js";
+import type { EventoDoSalao, Periodo, TipoDeEvento } from "../../dominio/eventos.js";
 import type { RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
 
 const ESQUEMA = `
@@ -35,6 +36,23 @@ CREATE TABLE IF NOT EXISTS resumo_de_esperas (
     soma         INTEGER NOT NULL,
     atendimentos INTEGER NOT NULL
 );
+
+-- Só cresce: o diário nunca é reescrito, ao contrário das outras tabelas.
+CREATE TABLE IF NOT EXISTS eventos (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    momento      TEXT    NOT NULL,
+    tipo         TEXT    NOT NULL,
+    mesa_id      TEXT,
+    mesa_numero  INTEGER,
+    capacidade   INTEGER,
+    telefone     TEXT,
+    nome         TEXT,
+    pessoas      INTEGER,
+    espera       INTEGER,
+    permanencia  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS eventos_por_momento ON eventos (momento);
 `;
 
 interface LinhaMesa {
@@ -63,6 +81,19 @@ interface LinhaFila {
 interface LinhaResumo {
     soma: number;
     atendimentos: number;
+}
+
+interface LinhaEvento {
+    momento: string;
+    tipo: string;
+    mesa_id: string | null;
+    mesa_numero: number | null;
+    capacidade: number | null;
+    telefone: string | null;
+    nome: string | null;
+    pessoas: number | null;
+    espera: number | null;
+    permanencia: number | null;
 }
 
 export interface OpcoesDoRepositorioSqlite {
@@ -219,6 +250,8 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
             const resultado = operacao(salao);
             if (gravar) {
                 this.#gravar(salao.estado());
+                this.#gravarEventos(salao.eventos());
+                salao.limparEventos();
             }
             this.#db.exec("COMMIT");
             return resultado;
@@ -240,6 +273,57 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
      */
     async consulta<T>(leitura: (salao: Salao) => T): Promise<T> {
         return this.#dentroDe("BEGIN DEFERRED", leitura, false);
+    }
+
+    async eventos(periodo: Periodo): Promise<EventoDoSalao[]> {
+        const linhas = this.#db
+            .prepare(
+                `SELECT momento, tipo, mesa_id, mesa_numero, capacidade, telefone, nome, pessoas,
+                        espera, permanencia
+                   FROM eventos
+                  WHERE momento >= ? AND momento < ?
+                  ORDER BY momento, id`
+            )
+            .all(periodo.inicio.toISOString(), periodo.fim.toISOString()) as unknown as LinhaEvento[];
+
+        return linhas.map((linha) => ({
+            momento: linha.momento,
+            tipo: linha.tipo as TipoDeEvento,
+            mesaId: linha.mesa_id,
+            mesaNumero: linha.mesa_numero,
+            capacidade: linha.capacidade,
+            telefone: linha.telefone,
+            nome: linha.nome,
+            pessoas: linha.pessoas,
+            esperaEmSegundos: linha.espera,
+            permanenciaEmSegundos: linha.permanencia
+        }));
+    }
+
+    #gravarEventos(eventos: readonly EventoDoSalao[]): void {
+        if (eventos.length === 0) {
+            return;
+        }
+        const inserir = this.#db.prepare(
+            `INSERT INTO eventos
+                (momento, tipo, mesa_id, mesa_numero, capacidade, telefone, nome, pessoas,
+                 espera, permanencia)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        for (const evento of eventos) {
+            inserir.run(
+                evento.momento,
+                evento.tipo,
+                evento.mesaId,
+                evento.mesaNumero,
+                evento.capacidade,
+                evento.telefone,
+                evento.nome,
+                evento.pessoas,
+                evento.esperaEmSegundos,
+                evento.permanenciaEmSegundos
+            );
+        }
     }
 
     #lerResumo(): LinhaResumo {

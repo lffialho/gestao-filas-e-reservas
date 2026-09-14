@@ -11,13 +11,16 @@ import type {
     ResultadoReserva
 } from "../entidades/salao.js";
 import type { Notificador } from "../portas/notificador.js";
+import type { Periodo } from "../eventos.js";
 import type { RepositorioDoSalao } from "../portas/repositorio-do-salao.js";
+import { resumirPeriodo, type ResumoDoPeriodo } from "./resumo.js";
 import {
     descreverErro,
     registradorSilencioso,
     type Registrador
 } from "../../compartilhado/log/registrador.js";
 
+export type { ResumoDoPeriodo, ResumoPorMesa } from "./resumo.js";
 export type {
     InfoCliente,
     InfoMesa,
@@ -129,6 +132,11 @@ export class MotorGerente {
 
     async gerarRelatorio(): Promise<RelatorioDoSalao> {
         return this.#repositorio.consulta((salao) => salao.relatorio());
+    }
+
+    /** Fechamento do período: lê o diário e o resume. */
+    async resumirPeriodo(periodo: Periodo): Promise<ResumoDoPeriodo> {
+        return resumirPeriodo(await this.#repositorio.eventos(periodo));
     }
 
     /** Recebe quem chegou: senta na melhor mesa livre ou põe na fila. */

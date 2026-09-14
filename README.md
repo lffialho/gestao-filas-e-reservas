@@ -43,7 +43,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
-| `npm test` | 199 testes |
+| `npm test` | 219 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -82,7 +82,8 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 | Método | Rota | O que faz |
 | --- | --- | --- |
 | `GET` | `/saude` | Sinal de vida. Sem token |
-| `GET` | `/salao` | Relatório: ocupação, tempo médio de espera, fila e mesas |
+| `GET` | `/salao` | Retrato de agora: ocupação, tempo médio de espera, fila e mesas |
+| `GET` | `/relatorio` | Fechamento de um período — `?de=<ISO>&ate=<ISO>` |
 | `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }`. Se alguém na fila couber nela, já nasce reservada |
 | `GET` | `/mesas/:id` | Estado da mesa e quem a ocupa |
 | `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
@@ -106,6 +107,18 @@ novo. É daí que saem duas coisas que o status sozinho não responde: há quant
 está na mesa, e há quanto tempo quem foi chamado ainda não apareceu. Bancos de versões
 anteriores ganham a coluna na primeira abertura, contando a partir da migração — não há como
 descobrir depois quando cada mesa entrou no status em que está.
+
+**O diário diz o que aconteceu.** O estado responde como o salão está agora; nenhuma
+pergunta sobre o passado — maior espera da noite, pico da fila, quantas vezes cada mesa
+girou — cabe nele. Por isso cada operação também deixa eventos, e o repositório os grava **na
+mesma transação** do estado: evento escrito depois sobreviveria a um rollback, e o relatório
+passaria a contar atendimento que não houve.
+
+`GET /relatorio?de=…&ate=…` resume um período. As bordas vêm em ISO de quem chama, porque só
+o cliente sabe onde começa "hoje" no fuso do restaurante. Dois números pedem leitura atenta:
+a **espera média** é de quem passou pela fila — juntar os zeros de quem sentou direto mediria
+o quanto o salão estava vazio, não quanto se espera quando há espera; e o **pico da fila**
+conta a partir de zero no começo do período, sem saber quantos já aguardavam antes dele.
 
 **O telefone é a identidade.** O mesmo número não pode estar em duas mesas, nem sentado e na
 fila ao mesmo tempo — é por ele que se desiste da fila e é para ele que o aviso de mesa
@@ -262,5 +275,8 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   nada no estado registra que o aviso ficou pendente. Com um provedor de verdade ligado, é a
   próxima peça a construir.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
-- Sem migrações versionadas. Há uma migração pontual, da tabela `esperas` antiga para o
-  resumo, mas não um mecanismo geral para mudanças futuras.
+- **O diário só cresce.** Não há expurgo nem arquivamento: um salão movimentado acumula
+  eventos para sempre. A consulta é indexada por momento, então a leitura de um período não
+  degrada, mas o arquivo sim.
+- Sem migrações versionadas. Há duas migrações pontuais — a tabela `esperas` antiga virando
+  resumo, e a coluna `desde` das mesas —, mas não um mecanismo geral para mudanças futuras.

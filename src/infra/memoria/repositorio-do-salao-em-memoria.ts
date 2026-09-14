@@ -2,6 +2,7 @@ import { TravaAssincrona } from "../../compartilhado/assincrono/trava-assincrona
 import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
 import type { Mesa } from "../../dominio/entidades/mesa.js";
 import { Salao } from "../../dominio/entidades/salao.js";
+import type { EventoDoSalao, Periodo } from "../../dominio/eventos.js";
 import type { RepositorioDoSalao } from "../../dominio/portas/repositorio-do-salao.js";
 
 const CHAVE_SALAO = "salao";
@@ -31,19 +32,26 @@ export class RepositorioDoSalaoEmMemoria implements RepositorioDoSalao {
     #salao: Salao;
     #trava: TravaAssincrona;
     #relogio: Relogio;
+    #diario: EventoDoSalao[];
 
     constructor(opcoes: OpcoesDoRepositorioEmMemoria = {}) {
         this.#relogio = opcoes.relogio ?? relogioDoSistema;
         this.#salao = new Salao(this.#relogio, opcoes.mesas ?? []);
         this.#trava = new TravaAssincrona();
+        this.#diario = [];
     }
 
     async transacao<T>(operacao: (salao: Salao) => T): Promise<T> {
         return this.#trava.executarComExclusividade(CHAVE_SALAO, () => {
             const anterior = this.#salao.estado();
             try {
-                return operacao(this.#salao);
+                const resultado = operacao(this.#salao);
+                this.#diario.push(...this.#salao.eventos());
+                this.#salao.limparEventos();
+                return resultado;
             } catch (erro) {
+                // Trocar o salão pelo retrato anterior descarta junto os
+                // eventos pendentes: o diário não registra o que foi desfeito.
                 this.#salao = Salao.reconstituir(anterior, this.#relogio);
                 throw erro;
             }
@@ -57,5 +65,13 @@ export class RepositorioDoSalaoEmMemoria implements RepositorioDoSalao {
      */
     async consulta<T>(leitura: (salao: Salao) => T): Promise<T> {
         return this.#trava.executarComExclusividade(CHAVE_SALAO, () => leitura(this.#salao));
+    }
+
+    async eventos(periodo: Periodo): Promise<EventoDoSalao[]> {
+        const inicio = periodo.inicio.toISOString();
+        const fim = periodo.fim.toISOString();
+        return this.#diario
+            .filter((evento) => evento.momento >= inicio && evento.momento < fim)
+            .map((evento) => ({ ...evento }));
     }
 }

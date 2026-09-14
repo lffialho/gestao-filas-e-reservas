@@ -144,7 +144,11 @@ describe("Mesa", () => {
             mesa.reservar(cliente("Ana", 2));
 
             const copia = Mesa.reconstituir(mesa.estado(), relogio);
-            assert.equal(copia.desde.getTime(), 90_000, "reiniciar o serviço não zera o prazo de quem foi chamado");
+            assert.equal(
+                copia.desde.getTime(),
+                90_000,
+                "reiniciar o serviço não zera o prazo de quem foi chamado"
+            );
         });
 
         it("recusa data de status inválida vinda do banco", () => {

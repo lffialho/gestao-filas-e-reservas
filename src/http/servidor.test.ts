@@ -503,6 +503,48 @@ describe("API HTTP", () => {
         });
     });
 
+    describe("relatório do período", () => {
+        const api = comApiPropria();
+        const tudo = "de=1970-01-01T00:00:00.000Z&ate=2100-01-01T00:00:00.000Z";
+
+        it("resume o que aconteceu no período", async () => {
+            await api().pedir("POST", "/chegadas", { nome: "Ana", pessoas: 2, telefone: "1" });
+            await api().pedir("POST", "/mesas/m1/liberacao");
+
+            const { status, json } = await api().pedir("GET", `/relatorio?${tudo}`);
+
+            assert.equal(status, 200);
+            assert.equal(json.gruposAtendidos, 1);
+            assert.equal(json.pessoasAtendidas, 2);
+            assert.equal(json.porMesa.length, 1);
+            assert.equal(json.porMesa[0].mesaNumero, 1);
+            assert.equal(json.porMesa[0].giros, 1);
+            assert.equal(json.porMesa[0].aproveitamentoPercentual, 100, "2 pessoas numa mesa de 2");
+        });
+
+        it("400 sem as bordas do período", async () => {
+            const { status, json } = await api().pedir("GET", "/relatorio");
+            assert.equal(status, 400);
+            assert.equal(json.erro.tipo, "DadosInvalidos");
+        });
+
+        it("400 quando a data não é ISO", async () => {
+            const { status } = await api().pedir(
+                "GET",
+                "/relatorio?de=ontem&ate=2100-01-01T00:00:00.000Z"
+            );
+            assert.equal(status, 400);
+        });
+
+        it("400 quando o fim não vem depois do início", async () => {
+            const { status } = await api().pedir(
+                "GET",
+                "/relatorio?de=2026-01-02T00:00:00.000Z&ate=2026-01-01T00:00:00.000Z"
+            );
+            assert.equal(status, 400);
+        });
+    });
+
     describe("cadastro devolve a mesa criada", () => {
         const api = comApiPropria();
 

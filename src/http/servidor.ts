@@ -21,6 +21,8 @@ interface Resposta {
 interface Contexto {
     parametros: Record<string, string>;
     corpo: Corpo;
+    /** Parâmetros depois do `?`. Hoje só o relatório usa. */
+    consulta: URLSearchParams;
 }
 
 type Manipulador = (ctx: Contexto) => Promise<Resposta>;
@@ -55,6 +57,19 @@ function inteiro(corpo: Corpo, campo: string): number {
     return valor;
 }
 
+/** Instante ISO 8601 vindo da query. O fuso é decidido por quem chama. */
+function instante(consulta: URLSearchParams, campo: string): Date {
+    const bruto = consulta.get(campo);
+    if (bruto === null || bruto.trim() === "") {
+        throw new DadosInvalidos(`O parâmetro "${campo}" é obrigatório, em ISO 8601.`);
+    }
+    const data = new Date(bruto);
+    if (Number.isNaN(data.getTime())) {
+        throw new DadosInvalidos(`O parâmetro "${campo}" não é uma data ISO 8601: "${bruto}".`);
+    }
+    return data;
+}
+
 function clienteDoCorpo(corpo: Corpo): Cliente {
     return new Cliente(texto(corpo, "nome"), inteiro(corpo, "pessoas"), texto(corpo, "telefone"));
 }
@@ -75,6 +90,19 @@ function rotas(motor: MotorGerente): Rota[] {
             status: 200,
             corpo: await motor.gerarRelatorio()
         })),
+
+        /**
+         * Fechamento do período. As bordas vêm de quem chama, em ISO: só o
+         * cliente sabe onde começa "hoje" no fuso do restaurante.
+         */
+        rota("GET", "/relatorio", async ({ consulta }) => {
+            const inicio = instante(consulta, "de");
+            const fim = instante(consulta, "ate");
+            if (fim.getTime() <= inicio.getTime()) {
+                throw new DadosInvalidos('O parâmetro "ate" tem de ser depois de "de".');
+            }
+            return { status: 200, corpo: await motor.resumirPeriodo({ inicio, fim }) };
+        }),
 
         rota("GET", "/fila", async () => ({
             status: 200,
@@ -268,6 +296,7 @@ interface PedidoADespachar {
     requisicao: IncomingMessage;
     metodo: string;
     caminho: string;
+    consulta: URLSearchParams;
 }
 
 /**
@@ -293,7 +322,7 @@ function segmentosDe(caminho: string): string[] {
 }
 
 async function despachar(pedido: PedidoADespachar): Promise<RespostaComCabecalhos> {
-    const { todas, autenticador, requisicao, metodo, caminho } = pedido;
+    const { todas, autenticador, requisicao, metodo, caminho, consulta } = pedido;
     const segmentos = segmentosDe(caminho);
 
     // HEAD roteia como GET; quem suprime o corpo na resposta é o próprio
@@ -335,7 +364,7 @@ async function despachar(pedido: PedidoADespachar): Promise<RespostaComCabecalho
     }
 
     const corpo = metodoDaRota === "GET" || metodoDaRota === "DELETE" ? {} : await lerCorpo(requisicao);
-    return casamento.rota.manipular({ parametros: casamento.parametros, corpo });
+    return casamento.rota.manipular({ parametros: casamento.parametros, corpo, consulta });
 }
 
 /**
@@ -372,7 +401,8 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
                     autenticador,
                     requisicao,
                     metodo,
-                    caminho: url.pathname
+                    caminho: url.pathname,
+                    consulta: url.searchParams
                 });
 
                 for (const [nome, valor] of Object.entries(resultado.cabecalhos ?? {})) {

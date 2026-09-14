@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { Cliente } from "../entidades/cliente.js";
 import { Mesa, StatusMesa } from "../entidades/mesa.js";
 import type { Relogio } from "../../compartilhado/tempo/relogio.js";
+import type { Periodo } from "../eventos.js";
 import type { RepositorioDoSalao } from "./repositorio-do-salao.js";
 
 export interface RepositorioParaTeste {
@@ -32,6 +33,9 @@ class RelogioDeTeste implements Relogio {
 }
 
 const duasMesas = (): Mesa[] => [new Mesa("m1", 1, 4), new Mesa("m2", 2, 2)];
+
+/** Larga o bastante para pegar tudo, com relógio falso ou de verdade. */
+const periodoInteiro = (): Periodo => ({ inicio: new Date(0), fim: new Date(4_000_000_000_000) });
 
 /**
  * Contrato da porta `RepositorioDoSalao`. Toda implementação roda esta suíte:
@@ -299,6 +303,79 @@ export function verificarContratoDoRepositorio(
                     120_000,
                     "o prazo de quem foi chamado não pode reiniciar a cada transação"
                 );
+            } finally {
+                fechar();
+            }
+        });
+
+        it("o diário registra, em ordem, o que a transação confirmou", async () => {
+            const relogio = new RelogioDeTeste();
+            const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+            try {
+                await repositorio.transacao((salao) => salao.receberCliente(cliente("Ana", 2, "1111")));
+                await repositorio.transacao((salao) => salao.receberCliente(cliente("Bruno", 4, "2222")));
+                relogio.avancarSegundos(60);
+                await repositorio.transacao((salao) => salao.liberarMesa("m1"));
+
+                const eventos = await repositorio.eventos(periodoInteiro());
+                assert.deepEqual(
+                    eventos.map((evento) => evento.tipo),
+                    ["sentou_direto", "sentou_direto", "liberou"]
+                );
+                const liberou = eventos[2];
+                assert.equal(liberou?.mesaId, "m1");
+                assert.equal(liberou?.permanenciaEmSegundos, 60, "quanto o grupo ficou com a mesa");
+                assert.equal(liberou?.capacidade, 4, "o evento se explica sozinho, sem consultar a mesa");
+            } finally {
+                fechar();
+            }
+        });
+
+        // O motivo de o diário ser gravado na mesma transação do estado.
+        it("o diário não guarda o que o rollback desfez", async () => {
+            const { repositorio, fechar } = criar({ mesas: duasMesas() });
+            try {
+                await assert.rejects(
+                    repositorio.transacao((salao) => {
+                        salao.entrarNaFila(cliente("Ana", 2, "1111"));
+                        throw new Error("falhou depois de enfileirar");
+                    })
+                );
+
+                assert.deepEqual(await repositorio.eventos(periodoInteiro()), []);
+            } finally {
+                fechar();
+            }
+        });
+
+        it("o período recorta o diário", async () => {
+            const relogio = new RelogioDeTeste();
+            const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+            try {
+                await repositorio.transacao((salao) => salao.entrarNaFila(cliente("Cedo", 2, "1")));
+                relogio.avancarSegundos(600);
+                await repositorio.transacao((salao) => salao.entrarNaFila(cliente("Tarde", 2, "2")));
+
+                const recorte = await repositorio.eventos({
+                    inicio: new Date(300_000),
+                    fim: new Date(900_000)
+                });
+                assert.deepEqual(
+                    recorte.map((evento) => evento.nome),
+                    ["Tarde"]
+                );
+            } finally {
+                fechar();
+            }
+        });
+
+        it("leitura não gera evento", async () => {
+            const { repositorio, fechar } = criar({ mesas: duasMesas() });
+            try {
+                await repositorio.consulta((salao) => salao.relatorio());
+                await repositorio.consulta((salao) => salao.tamanhoFila);
+
+                assert.deepEqual(await repositorio.eventos(periodoInteiro()), []);
             } finally {
                 fechar();
             }
