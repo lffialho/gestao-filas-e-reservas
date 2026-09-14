@@ -10,5 +10,7 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["navegador/**/*"]
+  "include": ["navegador/**/*"],
+  "_comentario": "Os testes ficam de fora do que vai para o navegador: importam node:test e não têm o que fazer em publico/js/. Quem os verifica é o tsconfig.testes.json.",
+  "exclude": ["navegador/**/*.test.ts"]
 }

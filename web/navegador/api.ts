@@ -116,6 +116,19 @@ export interface PaginaDeEventos {
     total: number;
 }
 
+/**
+ * O que aconteceria se este grupo chegasse agora. Vem do próprio salão, e não
+ * de uma cópia da regra aqui na tela: `mesa` diz onde sentaria — ou, numa
+ * recusa por telefone repetido, onde esse telefone já está.
+ */
+export interface Previsao {
+    destino: "mesa" | "fila" | "recusa";
+    mesa: InfoMesa | null;
+    posicao: number | null;
+    /** Em "recusa", o mesmo `tipo` do erro que a chegada de verdade daria. */
+    motivo: string | null;
+}
+
 export type Recepcao =
     | { destino: "mesa"; mesa: InfoMesa }
     | { destino: "fila"; posicao: number; item: ItemFilaJson };
@@ -187,6 +200,14 @@ export const api = {
             limite: String(limite)
         });
         return pedir(`/eventos?${busca.toString()}`);
+    },
+
+    previa: (pessoas: number, telefone: string): Promise<Previsao> => {
+        const busca = new URLSearchParams({ pessoas: String(pessoas) });
+        if (telefone !== "") {
+            busca.set("telefone", telefone);
+        }
+        return pedir(`/chegadas/previa?${busca.toString()}`);
     },
 
     chegada: (nome: string, pessoas: number, telefone: string): Promise<Recepcao> =>

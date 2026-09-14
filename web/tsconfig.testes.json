@@ -1,0 +1,9 @@
+{
+  "_comentario": "Os testes do navegador rodam sob node, então precisam dos tipos dele e não devem ser emitidos junto com o painel. Sem este arquivo eles só seriam verificados em tempo de execução.",
+  "extends": "./tsconfig.navegador.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["navegador/**/*"]
+}

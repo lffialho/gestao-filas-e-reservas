@@ -32,12 +32,15 @@ export interface Conteudo {
     acoes: readonly Acao[];
     /** Corpo extra: um formulário, uma tabela de fechamento, o que for. */
     corpo?: HTMLElement;
+    /** Chamado ao fechar, para o corpo desligar o que tiver ligado. */
+    aoFechar?: () => void;
 }
 
 export class Modal {
     readonly #raiz: HTMLElement;
     readonly #depoisDeAgir: () => void;
     #devolverFoco: HTMLElement | null = null;
+    #aoFechar: (() => void) | null = null;
     #agindo = false;
 
     constructor(raiz: HTMLElement, depoisDeAgir: () => void) {
@@ -94,6 +97,7 @@ export class Modal {
         );
 
         this.#devolverFoco = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        this.#aoFechar = conteudo.aoFechar ?? null;
 
         trocar(this.#raiz, caixa);
         this.#raiz.hidden = false;
@@ -101,6 +105,8 @@ export class Modal {
     }
 
     fechar(): void {
+        this.#aoFechar?.();
+        this.#aoFechar = null;
         this.#raiz.hidden = true;
         this.#raiz.replaceChildren();
         this.#devolverFoco?.focus();
