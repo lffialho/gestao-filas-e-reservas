@@ -50,6 +50,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
+| `npm run conferir:instalacao` | Confere uma **instalação no ar**, de fora — 57 verificações |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
 | `npm run web:build` | Compila o painel: servidor para `web/dist/`, navegador para `web/publico/js/` |
 | `npm run web:env` | Sobe o painel lendo o `.env` |
@@ -143,6 +144,25 @@ que `http://localhost:3000/saude` volta a responder em até dois minutos. É o t
 
 `ferramentas\desinstalar-windows.ps1` tira as tarefas e **não toca no banco nem nas cópias**
 — desinstalar não pode ser o comando que apaga o histórico do restaurante.
+
+### Conferir a instalação
+
+`npm test` prova o domínio. Isto prova a **instalação**: HTTP de verdade, token de verdade,
+SQLite de verdade, painel de verdade, os dois processos no ar.
+
+```bash
+npm run conferir:instalacao -- --pode-escrever
+```
+
+São 57 verificações — autenticação, ordem de chegada, a fila ganhando de mesa vazia, os códigos
+de erro, o diário, e a senha do painel com cookie forjado e tudo. Rode depois de instalar numa
+casa nova, antes de entregar a chave, e quando alguém ligar dizendo que "não funciona": ele
+diz em qual das 57 parou.
+
+**Ele escreve no salão**, e por isso pede `--pode-escrever` e se recusa a rodar com mesa
+ocupada ou gente na fila — teste que atrapalha o sábado é pior que teste nenhum. Os eventos
+que ele gera ficam no diário, como os de uma noite de verdade; para apagar, restaure a cópia
+anterior.
 
 ### As cópias do banco
 
