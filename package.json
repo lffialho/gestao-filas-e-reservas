@@ -14,13 +14,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src",
-    "format": "biome check --write src",
-    "verificar": "npm run lint && npm run typecheck && npm test && npm run build",
+    "lint": "biome check src web",
+    "format": "biome check --write src web",
+    "verificar": "npm run lint && npm run typecheck && npm test && npm run build && npm run web:build",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "start:env": "node --env-file=.env dist/main.js",
     "demo": "node dist/demo.js",
+    "web:build": "tsc -p web/tsconfig.servidor.json && tsc -p web/tsconfig.navegador.json",
+    "web": "node web/dist/servidor.js",
+    "web:env": "node --env-file=.env web/dist/servidor.js",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [

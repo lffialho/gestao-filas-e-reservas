@@ -24,6 +24,14 @@ export {
     type Posicao
 } from "./dominio/entidades/planta.js";
 export { MotorGerente, type OpcoesDoMotor } from "./dominio/servicos/motor-gerente.js";
+export {
+    resumirPeriodo,
+    type ResumoDoPeriodo,
+    type ResumoPorMesa
+} from "./dominio/servicos/resumo.js";
+
+// O diário: o que aconteceu, para quem quiser resumir por conta própria
+export type { EventoDoSalao, Periodo, TipoDeEvento } from "./dominio/eventos.js";
 
 // Erros — o chamador decide pelo tipo, não pelo texto da mensagem, então todos
 // os que a API pode devolver precisam ser nomeáveis daqui.

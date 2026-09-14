@@ -12,6 +12,18 @@ import {
 
 const cliente = (nome: string, pessoas: number): Cliente => new Cliente(nome, pessoas, `tel-${nome}`);
 
+class RelogioFalso {
+    #instante = 0;
+
+    agora(): Date {
+        return new Date(this.#instante);
+    }
+
+    avancarSegundos(segundos: number): void {
+        this.#instante += segundos * 1000;
+    }
+}
+
 describe("Mesa", () => {
     describe("construção", () => {
         it("nasce disponível e sem cliente", () => {
@@ -100,6 +112,48 @@ describe("Mesa", () => {
         it("recusa liberar mesa que já está disponível", () => {
             const mesa = new Mesa("m1", 1, 4);
             assert.throws(() => mesa.liberar(), MesaJaDisponivel);
+        });
+    });
+
+    describe("desde quando está no status", () => {
+        it("carimba a cada transição, e só nelas", () => {
+            const relogio = new RelogioFalso();
+            const mesa = new Mesa("m1", 1, 4, undefined, relogio);
+            assert.equal(mesa.desde.getTime(), 0, "nasce disponível agora");
+
+            relogio.avancarSegundos(60);
+            mesa.moverPara({ coluna: 3, linha: 3 });
+            assert.equal(mesa.desde.getTime(), 0, "arrastar na planta não é mudança de status");
+
+            mesa.reservar(cliente("Ana", 2));
+            assert.equal(mesa.desde.getTime(), 60_000);
+
+            relogio.avancarSegundos(300);
+            mesa.ocupar();
+            assert.equal(mesa.desde.getTime(), 360_000, "o relógio do prazo reinicia ao sentar");
+
+            relogio.avancarSegundos(3_600);
+            mesa.liberar();
+            assert.equal(mesa.desde.getTime(), 3_960_000);
+        });
+
+        it("o retrato guarda e a reconstituição devolve", () => {
+            const relogio = new RelogioFalso();
+            const mesa = new Mesa("m1", 1, 4, undefined, relogio);
+            relogio.avancarSegundos(90);
+            mesa.reservar(cliente("Ana", 2));
+
+            const copia = Mesa.reconstituir(mesa.estado(), relogio);
+            assert.equal(
+                copia.desde.getTime(),
+                90_000,
+                "reiniciar o serviço não zera o prazo de quem foi chamado"
+            );
+        });
+
+        it("recusa data de status inválida vinda do banco", () => {
+            const estado = new Mesa("m1", 1, 4).estado();
+            assert.throws(() => Mesa.reconstituir({ ...estado, desde: "ontem de tarde" }), DadosInvalidos);
         });
     });
 

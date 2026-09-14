@@ -11,13 +11,16 @@ import type {
     ResultadoReserva
 } from "../entidades/salao.js";
 import type { Notificador } from "../portas/notificador.js";
+import type { EventoDoSalao, Periodo } from "../eventos.js";
 import type { RepositorioDoSalao } from "../portas/repositorio-do-salao.js";
+import { resumirPeriodo, type ResumoDoPeriodo } from "./resumo.js";
 import {
     descreverErro,
     registradorSilencioso,
     type Registrador
 } from "../../compartilhado/log/registrador.js";
 
+export type { ResumoDoPeriodo, ResumoPorMesa } from "./resumo.js";
 export type {
     InfoCliente,
     InfoMesa,
@@ -129,6 +132,20 @@ export class MotorGerente {
 
     async gerarRelatorio(): Promise<RelatorioDoSalao> {
         return this.#repositorio.consulta((salao) => salao.relatorio());
+    }
+
+    /** Fechamento do período: lê o diário e o resume. */
+    async resumirPeriodo(periodo: Periodo): Promise<ResumoDoPeriodo> {
+        return resumirPeriodo(await this.#repositorio.eventos(periodo));
+    }
+
+    /**
+     * O diário cru do período. O resumo responde "como foi a noite"; isto
+     * responde "o que acabou de acontecer", que é outra pergunta e tem outro
+     * leitor — quem opera o salão agora, e não quem fecha o caixa.
+     */
+    async eventos(periodo: Periodo): Promise<EventoDoSalao[]> {
+        return this.#repositorio.eventos(periodo);
     }
 
     /** Recebe quem chegou: senta na melhor mesa livre ou põe na fila. */

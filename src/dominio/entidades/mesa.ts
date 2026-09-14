@@ -1,4 +1,5 @@
 import { Cliente } from "./cliente.js";
+import { type Relogio, relogioDoSistema } from "../../compartilhado/tempo/relogio.js";
 import type { EstadoDaMesa } from "../estado.js";
 import { COLUNAS_DA_PLANTA, dentroDaPlanta, LINHAS_DA_PLANTA, type Posicao } from "./planta.js";
 import {
@@ -27,8 +28,16 @@ export class Mesa {
     #status: StatusMesa;
     #clienteAtual: Cliente | null;
     #posicao: Posicao | null;
+    #desde: Date;
+    #relogio: Relogio;
 
-    constructor(id: string, numero: number, capacidade: number, posicao?: Posicao) {
+    constructor(
+        id: string,
+        numero: number,
+        capacidade: number,
+        posicao?: Posicao,
+        relogio: Relogio = relogioDoSistema
+    ) {
         if (id.trim() === "") {
             throw new DadosInvalidos("O id da mesa não pode ser vazio.");
         }
@@ -47,6 +56,8 @@ export class Mesa {
         this.#status = StatusMesa.DISPONIVEL;
         this.#clienteAtual = null;
         this.#posicao = null;
+        this.#relogio = relogio;
+        this.#desde = relogio.agora();
 
         if (posicao !== undefined) {
             this.moverPara(posicao);
@@ -71,6 +82,14 @@ export class Mesa {
 
     get clienteAtual(): Cliente | null {
         return this.#clienteAtual;
+    }
+
+    /**
+     * Desde quando a mesa está no status atual. Mudar a mesa de lugar não mexe
+     * nisto: arrastar na planta não faz o grupo sentar de novo.
+     */
+    get desde(): Date {
+        return new Date(this.#desde);
     }
 
     /** Onde a mesa está na planta. `null` até o salão a colocar. */
@@ -107,6 +126,7 @@ export class Mesa {
         }
         this.#status = StatusMesa.RESERVADA;
         this.#clienteAtual = cliente;
+        this.#desde = this.#relogio.agora();
     }
 
     /** O grupo que reservou chegou e sentou. */
@@ -115,6 +135,7 @@ export class Mesa {
             throw new TransicaoInvalida(this.#id, this.#status, "ocupar");
         }
         this.#status = StatusMesa.OCUPADA;
+        this.#desde = this.#relogio.agora();
     }
 
     /**
@@ -123,11 +144,17 @@ export class Mesa {
      * DISPONIVEL sempre tem cliente vale aqui também — dado corrompido não
      * entra no domínio disfarçado de estado válido.
      */
-    static reconstituir(estado: EstadoDaMesa): Mesa {
-        const mesa = new Mesa(estado.id, estado.numero, estado.capacidade);
+    static reconstituir(estado: EstadoDaMesa, relogio: Relogio = relogioDoSistema): Mesa {
+        const mesa = new Mesa(estado.id, estado.numero, estado.capacidade, undefined, relogio);
         if (estado.posicao !== null) {
             mesa.moverPara(estado.posicao);
         }
+
+        const desde = new Date(estado.desde);
+        if (Number.isNaN(desde.getTime())) {
+            throw new DadosInvalidos(`Data de status inválida para a mesa "${estado.id}": ${estado.desde}.`);
+        }
+        mesa.#desde = desde;
 
         if (!Object.values(StatusMesa).includes(estado.status)) {
             throw new DadosInvalidos(`Status desconhecido para a mesa "${estado.id}": ${estado.status}.`);
@@ -154,7 +181,8 @@ export class Mesa {
             capacidade: this.#capacidade,
             status: this.#status,
             cliente: this.#clienteAtual === null ? null : this.#clienteAtual.estado(),
-            posicao: this.posicao
+            posicao: this.posicao,
+            desde: this.#desde.toISOString()
         };
     }
 
@@ -169,6 +197,7 @@ export class Mesa {
         }
         this.#status = StatusMesa.DISPONIVEL;
         this.#clienteAtual = null;
+        this.#desde = this.#relogio.agora();
         return anterior;
     }
 }

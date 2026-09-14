@@ -3,6 +3,8 @@ node_modules/
 
 # Build
 dist/
+web/dist/
+web/publico/js/
 *.tsbuildinfo
 
 # Testes

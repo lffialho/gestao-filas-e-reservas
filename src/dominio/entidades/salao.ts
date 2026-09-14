@@ -4,6 +4,7 @@ import { FilaDeEspera, type ItemFila } from "./fila-de-espera.js";
 import { Mesa, StatusMesa } from "./mesa.js";
 import { COLUNAS_DA_PLANTA, LINHAS_DA_PLANTA, mesmaPosicao, type Posicao } from "./planta.js";
 import type { EstadoDoSalao } from "../estado.js";
+import type { EventoDoSalao, TipoDeEvento } from "../eventos.js";
 import {
     CancelamentoInvalido,
     ClienteJaNaFila,
@@ -26,6 +27,8 @@ export interface InfoMesa {
     status: StatusMesa;
     cliente: InfoCliente | null;
     posicao: Posicao | null;
+    /** ISO 8601 — desde quando a mesa está neste status. */
+    desde: string;
 }
 
 export interface InfoCliente {
@@ -82,6 +85,7 @@ function retratar(mesa: Mesa): InfoMesa {
         capacidade: mesa.capacidade,
         status: mesa.status,
         posicao: mesa.posicao,
+        desde: mesa.desde.toISOString(),
         cliente:
             cliente === null
                 ? null
@@ -91,6 +95,15 @@ function retratar(mesa: Mesa): InfoMesa {
                       quantidadePessoas: cliente.quantidadePessoas
                   })
     });
+}
+
+/** Quanto o item esperou na fila, em segundos, já confirmado o atendimento. */
+function esperaEmSegundos(item: ItemFila): number {
+    const atendimento = item.dataAtendimento;
+    if (atendimento === undefined) {
+        return 0;
+    }
+    return Math.floor((atendimento.getTime() - item.dataEntrada.getTime()) / 1000);
 }
 
 /**
@@ -121,13 +134,46 @@ function conferirIdentidade(naFila: Cliente, recebido: Cliente): void {
 export class Salao {
     #mesas: Map<string, Mesa>;
     #filaDeEspera: FilaDeEspera;
+    #relogio: Relogio;
+    #eventos: EventoDoSalao[];
 
     constructor(relogio: Relogio = relogioDoSistema, mesas: readonly Mesa[] = []) {
         this.#mesas = new Map<string, Mesa>();
         this.#filaDeEspera = new FilaDeEspera(relogio);
+        this.#relogio = relogio;
+        this.#eventos = [];
         for (const mesa of mesas) {
             this.#registrarMesa(mesa);
         }
+    }
+
+    /**
+     * O que aconteceu nesta operação, ainda não persistido. Quem chama é o
+     * repositório: ele grava os eventos na **mesma transação** que o estado e
+     * só então limpa. Gravar depois deixaria o diário contar um atendimento
+     * que o rollback desfez.
+     */
+    eventos(): EventoDoSalao[] {
+        return this.#eventos.map((evento) => ({ ...evento }));
+    }
+
+    limparEventos(): void {
+        this.#eventos = [];
+    }
+
+    #registrar(tipo: TipoDeEvento, campos: Partial<EventoDoSalao> = {}): void {
+        this.#eventos.push({
+            momento: this.#relogio.agora().toISOString(),
+            tipo,
+            mesaId: campos.mesaId ?? null,
+            mesaNumero: campos.mesaNumero ?? null,
+            capacidade: campos.capacidade ?? null,
+            telefone: campos.telefone ?? null,
+            nome: campos.nome ?? null,
+            pessoas: campos.pessoas ?? null,
+            esperaEmSegundos: campos.esperaEmSegundos ?? null,
+            permanenciaEmSegundos: campos.permanenciaEmSegundos ?? null
+        });
     }
 
     /**
@@ -138,6 +184,11 @@ export class Salao {
      */
     adicionarMesa(mesa: Mesa): ResultadoCadastroDeMesa {
         const propria = this.#registrarMesa(mesa);
+        this.#registrar("mesa_cadastrada", {
+            mesaId: propria.id,
+            mesaNumero: propria.numero,
+            capacidade: propria.capacidade
+        });
         const atendido = this.#entregarAoProximoDaFila(propria);
         return { mesa: retratar(propria), atendido };
     }
@@ -161,7 +212,10 @@ export class Salao {
             }
         }
 
-        const propria = Mesa.reconstituir(mesa.estado());
+        // O clone herda o relógio do salão: sem isso as transições da mesa
+        // marcariam a hora do sistema enquanto a fila conta pelo relógio
+        // injetado, e os dois tempos não bateriam.
+        const propria = Mesa.reconstituir(mesa.estado(), this.#relogio);
         const desejada = propria.posicao;
 
         if (desejada === null) {
@@ -342,10 +396,12 @@ export class Salao {
         const mesa = this.#melhorMesaLivrePara(cliente);
         if (mesa !== null) {
             mesa.reservar(cliente);
+            this.#registrarChegadaEmMesa("sentou_direto", mesa, cliente);
             return { destino: "mesa", mesa: retratar(mesa) };
         }
 
         const item = this.#filaDeEspera.adicionar(cliente);
+        this.#registrarEntradaNaFila(cliente);
         return { destino: "fila", posicao: this.#filaDeEspera.tamanhoDaFila, item };
     }
 
@@ -398,12 +454,22 @@ export class Salao {
                 throw new ClienteJaNaFila(cliente.telefone);
             }
             mesa.reservar(cliente);
+            this.#registrarChegadaEmMesa("sentou_direto", mesa, cliente);
             return { mesaId: mesa.id, mesaNumero: mesa.numero, cliente, status: mesa.status };
         }
 
         conferirIdentidade(esperando.cliente, cliente);
         mesa.reservar(esperando.cliente);
-        this.#filaDeEspera.confirmarAtendimento(esperando);
+        const atendido = this.#filaDeEspera.confirmarAtendimento(esperando);
+        this.#registrar("chamado", {
+            mesaId: mesa.id,
+            mesaNumero: mesa.numero,
+            capacidade: mesa.capacidade,
+            telefone: atendido.cliente.telefone,
+            nome: atendido.cliente.nome,
+            pessoas: atendido.cliente.quantidadePessoas,
+            esperaEmSegundos: esperaEmSegundos(atendido)
+        });
 
         return {
             mesaId: mesa.id,
@@ -417,31 +483,71 @@ export class Salao {
     ocuparMesa(mesaId: string): InfoMesa {
         const mesa = this.#obterMesa(mesaId);
         mesa.ocupar();
+        const ocupante = mesa.clienteAtual;
+        if (ocupante !== null) {
+            this.#registrarChegadaEmMesa("ocupou", mesa, ocupante);
+        }
         return retratar(mesa);
     }
 
     entrarNaFila(cliente: Cliente): ItemFila {
         this.#recusarTelefoneJaNoSalao(cliente.telefone);
-        return this.#filaDeEspera.adicionar(cliente);
+        const item = this.#filaDeEspera.adicionar(cliente);
+        this.#registrarEntradaNaFila(cliente);
+        return item;
+    }
+
+    #registrarEntradaNaFila(cliente: Cliente): void {
+        this.#registrar("entrou_na_fila", {
+            telefone: cliente.telefone,
+            nome: cliente.nome,
+            pessoas: cliente.quantidadePessoas
+        });
+    }
+
+    #registrarChegadaEmMesa(tipo: TipoDeEvento, mesa: Mesa, cliente: Cliente): void {
+        this.#registrar(tipo, {
+            mesaId: mesa.id,
+            mesaNumero: mesa.numero,
+            capacidade: mesa.capacidade,
+            telefone: cliente.telefone,
+            nome: cliente.nome,
+            pessoas: cliente.quantidadePessoas
+        });
     }
 
     /** Desistência: sai da fila de espera. Não mexe em mesa nenhuma. */
     sairDaFila(telefone: string): ItemFila | null {
-        return this.#filaDeEspera.remover(telefone);
+        const item = this.#filaDeEspera.remover(telefone);
+        if (item !== null) {
+            this.#registrar("saiu_da_fila", {
+                telefone: item.cliente.telefone,
+                nome: item.cliente.nome,
+                pessoas: item.cliente.quantidadePessoas,
+                esperaEmSegundos: Math.floor(
+                    (this.#relogio.agora().getTime() - item.dataEntrada.getTime()) / 1000
+                )
+            });
+        }
+        return item;
     }
 
     /** O grupo foi embora: a mesa vira e o próximo da fila que couber assume. */
     liberarMesa(mesaId: string): ResultadoLiberacao {
-        return this.#desocupar(mesaId, null);
+        return this.#desocupar(mesaId, null, "liberou");
     }
 
     /** A reserva não vem mais: a mesa vira e o próximo da fila que couber assume. */
     cancelarReserva(mesaId: string): ResultadoLiberacao {
-        return this.#desocupar(mesaId, (mesa) => {
-            if (mesa.status !== StatusMesa.RESERVADA) {
-                throw new CancelamentoInvalido(mesa.id, mesa.status);
-            }
-        });
+        return this.#desocupar(
+            mesaId,
+            (mesa) => {
+                if (mesa.status !== StatusMesa.RESERVADA) {
+                    throw new CancelamentoInvalido(mesa.id, mesa.status);
+                }
+            },
+            "reserva_cancelada"
+        );
     }
 
     /**
@@ -460,17 +566,41 @@ export class Salao {
         }
 
         mesa.reservar(proximo.cliente);
-        this.#filaDeEspera.confirmarAtendimento(proximo);
+        const atendido = this.#filaDeEspera.confirmarAtendimento(proximo);
+        this.#registrar("chamado", {
+            mesaId: mesa.id,
+            mesaNumero: mesa.numero,
+            capacidade: mesa.capacidade,
+            telefone: atendido.cliente.telefone,
+            nome: atendido.cliente.nome,
+            pessoas: atendido.cliente.quantidadePessoas,
+            esperaEmSegundos: esperaEmSegundos(atendido)
+        });
         return proximo.cliente;
     }
 
-    #desocupar(mesaId: string, validar: ((mesa: Mesa) => void) | null): ResultadoLiberacao {
+    #desocupar(
+        mesaId: string,
+        validar: ((mesa: Mesa) => void) | null,
+        tipo: TipoDeEvento
+    ): ResultadoLiberacao {
         const mesa = this.#obterMesa(mesaId);
         if (validar !== null) {
             validar(mesa);
         }
 
+        // Lido antes de liberar: `liberar` recarimba o `desde` da mesa.
+        const permanencia = Math.floor((this.#relogio.agora().getTime() - mesa.desde.getTime()) / 1000);
         const clienteAnterior = mesa.liberar();
+        this.#registrar(tipo, {
+            mesaId: mesa.id,
+            mesaNumero: mesa.numero,
+            capacidade: mesa.capacidade,
+            telefone: clienteAnterior.telefone,
+            nome: clienteAnterior.nome,
+            pessoas: clienteAnterior.quantidadePessoas,
+            permanenciaEmSegundos: permanencia
+        });
         const atendido = this.#entregarAoProximoDaFila(mesa);
 
         return {

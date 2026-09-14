@@ -1,0 +1,1006 @@
+/*
+ * O painel do maître.
+ *
+ * Escuro porque salão de restaurante à noite é escuro, e uma tela branca no
+ * balcão cega quem olha para ela a cada dois minutos. As três cores fortes são
+ * as três únicas coisas que a planta precisa dizer de longe: verde é livre,
+ * âmbar é chamada esperando, vermelho é ocupada. Nada mais no painel usa essas
+ * cores, para que elas não percam o sentido.
+ *
+ * Medidas em porcentagem na planta, de propósito: a mesma disposição tem de
+ * valer no monitor do escritório e no tablet do balcão.
+ */
+
+:root {
+    color-scheme: dark;
+
+    --fundo: #0b0f17;
+    --painel: #141a24;
+    --chao: #10161f;
+    --borda: #1e2733;
+    --borda-clara: #2a3442;
+
+    --texto: #e8eef4;
+    --texto-suave: #c9d2db;
+    --apagado: #8792a0;
+    --bem-apagado: #5c6673;
+
+    --livre: #3ddc84;
+    --livre-escuro: #06210f;
+    --chamada: #ffb627;
+    --chamada-clara: #ffd79a;
+    --ocupada: #ff5c5c;
+    --ocupada-clara: #ffafaf;
+    --assento-vago: #3a4553;
+
+    --raio: 12px;
+    --respiro: 14px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* Sem isto, `.modal { display: flex }` venceria o atributo `hidden`. */
+[hidden] {
+    display: none !important;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--respiro);
+    background: var(--fundo);
+    color: var(--texto);
+    font-family: Archivo, "Trebuchet MS", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.45;
+}
+
+.mono {
+    font-family: "IBM Plex Mono", ui-monospace, "Courier New", monospace;
+}
+
+.rotulo {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--apagado);
+}
+
+/* ---------------------------------------------------------------- cabeçalho */
+
+.cabecalho {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
+.cabecalho__marca {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: 22px;
+    border-right: 1px solid var(--borda);
+}
+
+.cabecalho__titulo {
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+}
+
+.cabecalho__relogio {
+    font-size: 14px;
+    color: var(--apagado);
+}
+
+.caixa-de-busca {
+    flex: 1 1 280px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    padding: 0 18px;
+    background: var(--painel);
+    border: 1px solid var(--borda-clara);
+    border-radius: var(--raio);
+    color: var(--apagado);
+}
+
+.caixa-de-busca:focus-within {
+    border-color: var(--livre);
+}
+
+.caixa-de-busca__lupa {
+    flex-shrink: 0;
+}
+
+.caixa-de-busca input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    color: var(--texto);
+    font-family: inherit;
+    font-size: 18px;
+}
+
+.caixa-de-busca input:focus {
+    outline: none;
+}
+
+.caixa-de-busca input::placeholder {
+    color: var(--bem-apagado);
+}
+
+.caixa-de-busca__tecla {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border: 1px solid var(--borda-clara);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--bem-apagado);
+}
+
+.botao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 56px;
+    padding: 0 22px;
+    border-radius: var(--raio);
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.botao--contorno {
+    border: 1px solid var(--borda-clara);
+    background: var(--painel);
+    color: var(--texto);
+}
+
+.botao--contorno:hover {
+    border-color: var(--apagado);
+}
+
+.botao--cheio {
+    height: 64px;
+    border: none;
+    background: var(--livre);
+    color: var(--livre-escuro);
+    font-size: 19px;
+    font-weight: 700;
+}
+
+.botao--cheio:hover {
+    filter: brightness(1.08);
+}
+
+.aviso {
+    margin: 0;
+    padding: 12px 18px;
+    border: 1px solid var(--chamada);
+    border-radius: var(--raio);
+    background: rgb(255 182 39 / 10%);
+    color: var(--chamada-clara);
+    font-size: 15px;
+}
+
+/* ------------------------------------------------------------------ planta */
+
+/*
+ * A altura é fixada aqui, e não deixada ao conteúdo, para manter a fila à
+ * vista: a planta é para olhar de relance, a fila é para decidir, e ter de
+ * rolar a página para saber quem é o próximo derrotaria o painel. Com a altura
+ * definida, o diário rola dentro da própria caixa em vez de esticar a coluna.
+ */
+.tabuleiro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 16px;
+    height: clamp(420px, calc(100vh - 284px), 720px);
+    min-height: 0;
+}
+
+.planta {
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    background-color: var(--chao);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.grade {
+    background-image:
+        linear-gradient(to right, rgb(125 135 148 / 10%) 1px, transparent 1px),
+        linear-gradient(to bottom, rgb(125 135 148 / 10%) 1px, transparent 1px);
+    background-size: calc(100% / 12) calc(100% / 9);
+}
+
+/* A porta. Referência de leitura: a planta é vista da entrada para o fundo. */
+.planta__entrada {
+    position: absolute;
+    left: 0;
+    top: 62%;
+    height: 26%;
+    padding-left: 10px;
+    border-left: 5px solid var(--livre);
+    filter: drop-shadow(-1px 0 10px rgb(61 220 132 / 80%));
+    writing-mode: vertical-rl;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--livre);
+}
+
+.planta__vazia {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+    color: var(--apagado);
+    font-size: 17px;
+}
+
+.lugar {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.vago {
+    border: 2px solid var(--assento-vago);
+}
+
+.livre {
+    border: 2px solid var(--livre);
+}
+
+.ocupado {
+    background: var(--ocupada);
+    box-shadow: 0 0 9px rgb(255 92 92 / 75%);
+}
+
+.reservado {
+    background: var(--chamada);
+    box-shadow: 0 0 9px rgb(255 182 39 / 75%);
+}
+
+.mesa {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+    border: none;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+}
+
+.mesa__lugares {
+    display: flex;
+    justify-content: space-evenly;
+    width: 68%;
+    min-height: 11px;
+}
+
+.mesa__corpo {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 11px;
+    border: 2px solid var(--borda-clara);
+    overflow: hidden;
+}
+
+.mesa__cabeca {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    max-width: 100%;
+    padding: 0 8px;
+}
+
+.mesa__numero {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.mesa__nome {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/*
+ * Centralizar num flex deixa o filho maior que o pai transbordar para os dois
+ * lados, e `overflow: hidden` no pai não salva. O limite tem de vir aqui.
+ */
+.mesa__relogio {
+    max-width: 100%;
+    padding: 0 8px;
+    font-size: 13px;
+    color: var(--apagado);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mesa__barra {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 4px;
+    width: 100%;
+    background: var(--chamada);
+}
+
+.mesa--livre .mesa__corpo {
+    background: rgb(61 220 132 / 10%);
+    border-color: var(--livre);
+    box-shadow: 0 0 20px rgb(61 220 132 / 28%);
+}
+
+.mesa--livre .mesa__numero,
+.mesa--livre .mesa__nome {
+    color: var(--livre);
+}
+
+.mesa--chamada .mesa__corpo {
+    background: rgb(255 182 39 / 12%);
+    border-color: var(--chamada);
+    box-shadow: 0 0 20px rgb(255 182 39 / 32%);
+}
+
+.mesa--chamada .mesa__numero {
+    color: var(--chamada);
+}
+
+.mesa--chamada .mesa__nome {
+    color: var(--chamada-clara);
+}
+
+.mesa--chamada .mesa__relogio {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--chamada);
+}
+
+.mesa--ocupada .mesa__corpo {
+    background: rgb(255 92 92 / 10%);
+    border-color: var(--ocupada);
+    box-shadow: 0 0 20px rgb(255 92 92 / 24%);
+}
+
+.mesa--ocupada .mesa__numero {
+    color: var(--ocupada);
+}
+
+.mesa--ocupada .mesa__nome {
+    color: var(--ocupada-clara);
+}
+
+/* Prazo estourado: pisca, e só. Quem devolve a mesa é o maître, nunca o relógio. */
+.mesa--atrasada .mesa__corpo {
+    animation: pulsar 1.1s ease-in-out infinite;
+}
+
+.mesa--atrasada .mesa__relogio {
+    color: var(--ocupada);
+}
+
+@keyframes pulsar {
+    50% {
+        border-color: var(--ocupada);
+        box-shadow: 0 0 26px rgb(255 92 92 / 55%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mesa--atrasada .mesa__corpo {
+        animation: none;
+        border-color: var(--ocupada);
+    }
+}
+
+.mesa:hover .mesa__corpo,
+.mesa:focus-visible .mesa__corpo {
+    filter: brightness(1.2);
+}
+
+/* Busca: o que casou salta, o resto some sem sair do lugar. */
+.apagada {
+    opacity: 0.18;
+}
+
+.achada {
+    outline: 2px solid var(--texto);
+    outline-offset: 3px;
+    border-radius: 13px;
+}
+
+/* ----------------------------------------------------------------- lateral */
+
+.lateral {
+    display: flex;
+    flex-direction: column;
+    gap: var(--respiro);
+    min-height: 0;
+}
+
+.cartoes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.cartao {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 14px 16px;
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+}
+
+.cartao__valor {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cartao__unidade {
+    margin-left: 3px;
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--apagado);
+}
+
+.cartao__nota {
+    font-size: 13px;
+    color: var(--apagado);
+}
+
+.cartao--livre {
+    border-color: var(--livre);
+}
+
+.cartao--livre .rotulo,
+.cartao--livre .cartao__valor {
+    color: var(--livre);
+}
+
+.cartao--atencao .cartao__valor {
+    color: var(--chamada);
+}
+
+.cartao--quente .cartao__valor {
+    color: var(--ocupada);
+}
+
+.diario {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 190px;
+    padding: 16px 18px;
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+}
+
+/* O diário rola dentro da própria caixa; a página, não. */
+.diario__linhas {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    overflow-y: auto;
+}
+
+.diario__linha {
+    display: flex;
+    gap: 12px;
+}
+
+.diario__hora {
+    flex-shrink: 0;
+    font-size: 13px;
+    color: var(--apagado);
+}
+
+.diario__texto {
+    font-size: 15px;
+    color: var(--texto-suave);
+}
+
+.diario__texto--chamada {
+    color: var(--chamada);
+}
+
+.diario__texto--ocupacao {
+    color: var(--ocupada-clara);
+}
+
+.diario__texto--apagado {
+    color: var(--apagado);
+}
+
+.diario__vazio {
+    margin: 0;
+    color: var(--apagado);
+    font-size: 15px;
+}
+
+.legenda {
+    margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--borda);
+    font-size: 13px;
+    color: var(--apagado);
+}
+
+.legenda span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* -------------------------------------------------------------------- fila */
+
+.fila {
+    display: flex;
+    align-items: stretch;
+    gap: var(--respiro);
+    flex-wrap: wrap;
+}
+
+.fila__contador {
+    flex: 0 0 150px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 14px 16px;
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+}
+
+.fila__numero {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.fila__nota {
+    font-size: 13px;
+    color: var(--apagado);
+}
+
+.fila__vazia {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 14px 20px;
+    border: 1px dashed var(--borda-clara);
+    border-radius: var(--raio);
+    color: var(--apagado);
+    font-size: 16px;
+}
+
+.proximo {
+    flex: 0 1 420px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 14px 18px;
+    background: rgb(61 220 132 / 7%);
+    border: 2px solid var(--livre);
+    border-radius: var(--raio);
+    color: inherit;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.proximo__topo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.proximo__topo .rotulo {
+    color: var(--livre);
+}
+
+.proximo__quem {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.proximo__nome {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.proximo__relogio {
+    font-size: 15px;
+    color: var(--livre);
+}
+
+.proximo__destino {
+    font-size: 15px;
+    color: var(--texto-suave);
+}
+
+.proximo__destino--sem-saida {
+    color: var(--ocupada);
+    font-weight: 600;
+}
+
+.espera__lugares {
+    display: flex;
+    gap: 5px;
+}
+
+.fila__tira {
+    flex: 1 1 320px;
+    display: flex;
+    gap: 12px;
+}
+
+.espera {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 14px 16px;
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+    color: inherit;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.espera:hover,
+.proximo:hover {
+    border-color: var(--apagado);
+}
+
+.espera__topo {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--apagado);
+}
+
+.espera__nome {
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fila__sobra {
+    flex: 0 0 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: var(--chao);
+    border: 1px dashed var(--borda-clara);
+    border-radius: var(--raio);
+    font-size: 13px;
+    color: var(--bem-apagado);
+}
+
+.fila__sobra-numero {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--apagado);
+}
+
+/* ------------------------------------------------------------------- modal */
+
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgb(3 6 11 / 74%);
+}
+
+.modal__caixa {
+    width: min(520px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+    background: var(--painel);
+    border: 1px solid var(--borda-clara);
+    border-radius: 14px;
+}
+
+.modal__titulo {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.modal__nota {
+    margin: 0;
+    font-size: 16px;
+    color: var(--texto-suave);
+}
+
+.modal__recado {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+.modal__recado--erro {
+    background: rgb(255 92 92 / 12%);
+    border: 1px solid var(--ocupada);
+    color: var(--ocupada-clara);
+}
+
+.modal__recado--feito {
+    background: rgb(61 220 132 / 10%);
+    border: 1px solid var(--livre);
+    color: var(--livre);
+}
+
+.modal__acoes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.acao {
+    min-height: 52px;
+    padding: 0 18px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.acao:disabled {
+    opacity: 0.5;
+    cursor: progress;
+}
+
+.acao--principal {
+    background: var(--livre);
+    color: var(--livre-escuro);
+}
+
+.acao--perigo {
+    background: none;
+    border-color: var(--ocupada);
+    color: var(--ocupada-clara);
+}
+
+.acao--discreta {
+    background: none;
+    border-color: var(--borda-clara);
+    color: var(--apagado);
+}
+
+/* Armada: já foi tocada uma vez e o próximo toque executa. */
+.acao--armada {
+    background: var(--ocupada);
+    border-color: var(--ocupada);
+    color: #2a0606;
+}
+
+.formulario {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.campo {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.campo__entrada {
+    height: 52px;
+    padding: 0 14px;
+    background: var(--chao);
+    border: 1px solid var(--borda-clara);
+    border-radius: 10px;
+    color: var(--texto);
+    font-family: inherit;
+    font-size: 18px;
+}
+
+.campo__entrada:focus {
+    outline: none;
+    border-color: var(--livre);
+}
+
+/* -------------------------------------------------------------- fechamento */
+
+.fechamento {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.fechamento__numeros {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Rótulo à esquerda, número à direita, e a ressalva numa linha só dela. */
+.fechamento__linha {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    align-items: baseline;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--borda);
+}
+
+.fechamento__rotulo {
+    font-size: 16px;
+    color: var(--texto-suave);
+}
+
+.fechamento__valor {
+    font-size: 20px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.fechamento__nota {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: var(--apagado);
+}
+
+.fechamento__mesas {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+}
+
+.fechamento__mesas th {
+    padding: 6px 8px 6px 0;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--apagado);
+}
+
+.fechamento__mesas td {
+    padding: 7px 8px 7px 0;
+    border-top: 1px solid var(--borda);
+}
+
+.fechamento__vazio {
+    margin: 0;
+    color: var(--apagado);
+}
+
+/* ------------------------------------------------------------ telas menores */
+
+@media (max-width: 1180px) {
+    /* Empilhado, cada parte volta a ter a altura do próprio conteúdo. */
+    .tabuleiro {
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+    }
+
+    .planta {
+        aspect-ratio: 960 / 612;
+        max-height: 62vh;
+    }
+
+    .cartoes {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    body {
+        padding: 14px;
+    }
+
+    .cabecalho__marca {
+        border-right: none;
+        padding-right: 0;
+    }
+
+    .cartoes {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fila__tira {
+        flex-wrap: wrap;
+    }
+
+    .mesa__nome {
+        font-size: 13px;
+    }
+
+    .mesa__numero {
+        font-size: 19px;
+    }
+
+    .mesa__relogio {
+        padding: 0 4px;
+        font-size: 11px;
+    }
+
+    .mesa__cabeca {
+        gap: 5px;
+        padding: 0 4px;
+    }
+}

@@ -4,8 +4,9 @@ Backend para atendimento de salão de restaurante **por ordem de chegada**. Não
 marcada: quem chega é sentado na menor mesa que o acomoda ou entra na fila, e quando uma
 mesa vira ela vai para o primeiro da fila que couber nela.
 
-É só o backend: domínio, persistência e API HTTP. Não há interface — qualquer cliente que
-fale HTTP serve.
+O serviço é só backend: domínio, persistência e API HTTP. O painel web vive em `web/`, num
+processo próprio, e fala com ele apenas por HTTP — `src/` não sabe que existe interface, e
+qualquer outro cliente que fale HTTP serve igual.
 
 Sem dependências de runtime. Banco, servidor e testes usam só o que vem no Node
 (`node:sqlite`, `node:http`, `node:test`).
@@ -43,12 +44,14 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
-| `npm test` | 193 testes |
+| `npm test` | 219 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
+| `npm run web:build` | Compila o painel: servidor para `web/dist/`, navegador para `web/publico/js/` |
+| `npm run web:env` | Sobe o painel lendo o `.env` |
 
 ### Configuração
 
@@ -82,7 +85,9 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 | Método | Rota | O que faz |
 | --- | --- | --- |
 | `GET` | `/saude` | Sinal de vida. Sem token |
-| `GET` | `/salao` | Relatório: ocupação, tempo médio de espera, fila e mesas |
+| `GET` | `/salao` | Retrato de agora: ocupação, tempo médio de espera, fila e mesas |
+| `GET` | `/relatorio` | Fechamento de um período — `?de=<ISO>&ate=<ISO>` |
+| `GET` | `/eventos` | O diário cru do período — `?de=<ISO>&ate=<ISO>&limite=<1..500>` |
 | `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }`. Se alguém na fila couber nela, já nasce reservada |
 | `GET` | `/mesas/:id` | Estado da mesa e quem a ocupa |
 | `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
@@ -100,6 +105,31 @@ cabe naquela mesa, só ele pode recebê-la — e quem senta é o cliente que já
 com a hora de chegada dele. Se o nome ou o tamanho do grupo do pedido não baterem com o que
 está na fila, a resposta é `409 IdentidadeDivergente` em vez de uma troca silenciosa.
 
+**Toda mesa diz desde quando.** O campo `desde` marca o instante em que a mesa entrou no
+status atual, e muda só nas transições — arrastar a mesa na planta não faz o grupo sentar de
+novo. É daí que saem duas coisas que o status sozinho não responde: há quanto tempo o grupo
+está na mesa, e há quanto tempo quem foi chamado ainda não apareceu. Bancos de versões
+anteriores ganham a coluna na primeira abertura, contando a partir da migração — não há como
+descobrir depois quando cada mesa entrou no status em que está.
+
+**O diário diz o que aconteceu.** O estado responde como o salão está agora; nenhuma
+pergunta sobre o passado — maior espera da noite, pico da fila, quantas vezes cada mesa
+girou — cabe nele. Por isso cada operação também deixa eventos, e o repositório os grava **na
+mesma transação** do estado: evento escrito depois sobreviveria a um rollback, e o relatório
+passaria a contar atendimento que não houve.
+
+`GET /relatorio?de=…&ate=…` resume um período. As bordas vêm em ISO de quem chama, porque só
+o cliente sabe onde começa "hoje" no fuso do restaurante. Dois números pedem leitura atenta:
+a **espera média** é de quem passou pela fila — juntar os zeros de quem sentou direto mediria
+o quanto o salão estava vazio, não quanto se espera quando há espera; e o **pico da fila**
+conta a partir de zero no começo do período, sem saber quantos já aguardavam antes dele.
+
+`GET /eventos?de=…&ate=…` devolve os mesmos fatos sem somar nada, do mais recente para o mais
+antigo, com `{ itens, total }`. São perguntas diferentes: o resumo responde "como foi a
+noite", o diário responde "o que acabou de acontecer". `limite` corta a resposta, não a
+leitura — o período é lido inteiro de qualquer jeito, e o corte existe para o painel não
+arrastar o dia todo a cada atualização; por isso `total` conta o período, não a fatia.
+
 **O telefone é a identidade.** O mesmo número não pode estar em duas mesas, nem sentado e na
 fila ao mesmo tempo — é por ele que se desiste da fila e é para ele que o aviso de mesa
 pronta vai.
@@ -115,6 +145,7 @@ curl -X POST localhost:3000/chegadas \
 {
   "destino": "mesa",
   "mesa": { "id": "m1", "numero": 1, "capacidade": 2, "status": "RESERVADA",
+            "desde": "2026-09-13T23:12:04.118Z",
             "cliente": { "nome": "Ana e Bruno", "telefone": "1111", "quantidadePessoas": 2 } }
 }
 ```
@@ -139,6 +170,90 @@ trate por ele, não pela mensagem. Campos extras vêm conforme o erro: `mesaId`,
 A diferença entre `409` e `422` é proposital: pedir uma mesa de 2 para um grupo de 4 conflita
 com *aquela* mesa (`409`, outra mesa pode servir); um grupo de 50 num salão cuja maior mesa
 tem 6 lugares não tem solução nenhuma (`422`, esperar na fila não resolveria).
+
+## Painel
+
+```bash
+npm run build && npm run web:build
+npm run start:env     # o serviço, porta 3000
+npm run web:env       # o painel, porta 5173
+```
+
+Dois processos, de propósito. **O painel existe por causa do token**: `SALAO_TOKEN` é segredo
+único da equipe, e em JavaScript de navegador qualquer um que abra o devtools libera todas as
+mesas do salão. Então `web/servidor` guarda o token, serve `web/publico/` e repassa `/api/...`
+para o serviço pondo o cabeçalho ali. O `Authorization` que chega do navegador é descartado —
+quem fala com o serviço não escolhe a credencial.
+
+```
+web/
+  servidor/    node:http — estáticos e repasse autenticado
+  navegador/   TypeScript do painel, compilado para publico/js/
+    api.ts       cliente da API, com os tipos do que viaja no fio
+    tempo.ts     o fuso do restaurante e os formatos de hora
+    relogios.ts  o tique de um segundo que reescreve as contagens
+    planta.ts    a planta: vãos, lugares e colisões
+    fila.ts      a tira da fila
+    diario.ts    fato do diário → frase
+    fechamento.ts  os números do dia
+    chegada.ts   o formulário de quem chegou
+    modal.ts     a janela de ação
+    dom.ts       montagem de DOM sem innerHTML
+    painel.ts    estado, atualização e regiões
+  publico/     index.html, estilo.css e o JavaScript gerado
+```
+
+Sem bundler e sem dependência: o `tsc` que já está aqui compila os dois lados, e o navegador
+carrega os módulos nativamente. `web/dist/` e `web/publico/js/` são gerados e ficam fora do
+git. A única coisa que vem de fora são as fontes (Google Fonts); sem internet o painel cai
+nas fontes do sistema e continua inteiro.
+
+### O que está na tela
+
+A **planta** é a grade 12 × 9 do domínio com as mesas por cima. Verde é livre, âmbar é
+chamada, vermelho é ocupada — e nada mais no painel usa essas três cores, para que não
+percam o sentido. As bolinhas em volta são os lugares: dá para contar as cadeiras e ver que
+sobram duas na mesa de quatro. Ao lado, quatro números (ocupação, maior mesa livre, espera
+média, fila), o diário do dia e, embaixo, a fila — com o próximo aberto por inteiro e o resto
+resumido, porque num salão de quarenta mesas ninguém opera lendo trinta cartões.
+
+Clicar numa mesa abre o que dá para fazer com ela: *sentou*, *devolver para a fila*, *liberou
+a mesa*. O que tira a mesa de alguém pede um segundo toque. Clicar em quem espera oferece
+tirá-lo da fila. A resposta do serviço vira frase — "Mesa 3 liberada e chamada para Ana" —
+em vez de mandar conferir na tela.
+
+**A mesa chamada tem prazo.** `RESERVADA` já significa "chamada, ainda não sentou", e o
+`desde` diz desde quando; o painel conta cinco minutos a partir daí e, quando estouram,
+marca a mesa. Só marca: quem devolve a mesa é o maître, nunca o relógio — quem foi chamado
+pode estar estacionando o carro, e um cancelamento automático daria a mesa dessa pessoa para
+outra sem ninguém ter olhado.
+
+**Desenho por região.** A tela se atualiza sozinha a cada três segundos, e o que a
+atualização substitui é só o que veio do serviço: planta, números, diário e fila. A caixa de
+busca e a janela de ação ficam de fora — um painel que apagasse o nome sendo digitado, ou que
+fechasse a janela no meio de uma decisão, perderia a confiança de quem opera em um
+expediente. Pela mesma razão os cliques são ouvidos nos contêineres, e não nos cartões: os
+cartões são trocados, os contêineres não. E as contagens regressivas correm num tique local
+de um segundo que só reescreve texto, para não ficarem tremendo junto com a rede.
+
+Sem contato com o serviço, o último retrato **fica na tela** com um aviso dizendo de quando
+ele é. Num salão cheio, o estado conhecido de um minuto atrás vale mais do que uma tela em
+branco.
+
+**O fuso do restaurante mora no painel**, em `web/navegador/tempo.ts` — hoje
+`America/Sao_Paulo`. O serviço trabalha com instantes, e instante não tem fuso; "hoje" tem, e
+quem sabe onde começa o dia é quem opera o salão. Fixar no painel também é mais correto do que
+usar o fuso do aparelho: o tablet do balcão pode estar configurado de qualquer jeito, e o
+relatório do dia não pode depender disso.
+
+**A posição do domínio é um ladrilho**; o vão de vários ladrilhos que cada mesa ocupa na tela
+é invenção do painel. Daí vem o único caso curioso: duas mesas a um ladrilho de distância são
+legais no domínio e se cobririam no desenho. Quando isso acontece, a de número menor fica
+onde está e a outra vai para o primeiro vão livre — mesa desenhada em outro canto ainda se
+lê, duas mesas empilhadas não se leem nenhuma.
+
+Nome de cliente é texto que alguém digitou no balcão, então nada no painel entra por
+`innerHTML`: todo texto vai por `textContent`, e o que vem da API nunca vira marcação.
 
 ## Operação
 
@@ -196,6 +311,7 @@ src/
     notificacao/   notificador que registra no log
   http/            servidor, rotas, autenticação, erro → status
   compartilhado/   trava assíncrona, relógio injetável, log estruturado
+  eventos.ts       o diário: o que aconteceu, em ordem
   main.ts          ponto de entrada do serviço
   demo.ts          roteiro de demonstração
   index.ts         superfície pública do pacote (só reexporta)
@@ -254,5 +370,16 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   nada no estado registra que o aviso ficou pendente. Com um provedor de verdade ligado, é a
   próxima peça a construir.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
-- Sem migrações versionadas. Há uma migração pontual, da tabela `esperas` antiga para o
-  resumo, mas não um mecanismo geral para mudanças futuras.
+- **O diário só cresce.** Não há expurgo nem arquivamento: um salão movimentado acumula
+  eventos para sempre. A consulta é indexada por momento, então a leitura de um período não
+  degrada, mas o arquivo sim.
+- Sem migrações versionadas. Há duas migrações pontuais — a tabela `esperas` antiga virando
+  resumo, e a coluna `desde` das mesas —, mas não um mecanismo geral para mudanças futuras.
+- **O painel atualiza por polling**, quatro leituras a cada três segundos. Numa casa e num
+  painel só isso é irrelevante; com muitos painéis abertos, o caminho é o servidor do painel
+  empurrar as mudanças em vez de cada aba perguntar.
+- **O painel não cadastra nem arrasta mesas.** A planta desenha a posição que o serviço
+  guarda, e `POST /mesas` e `POST /mesas/:id/posicao` continuam sendo trabalho de quem monta
+  o salão pela API.
+- **O fechamento do dia é o resumo em tela.** Não há escolha de período, exportação nem
+  impressão; o período é sempre do começo do dia até agora.
