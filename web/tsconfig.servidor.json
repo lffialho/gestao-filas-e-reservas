@@ -10,5 +10,7 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["servidor/**/*"]
+  "include": ["servidor/**/*"],
+  "_comentario": "Os testes ficam de fora do que vai para dist/: importam node:test e nao sao parte do painel que roda. Quem os verifica e o tsconfig.testes-servidor.json.",
+  "exclude": ["servidor/**/*.test.ts"]
 }

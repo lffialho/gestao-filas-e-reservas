@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.testes.json",
+    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.testes.json && tsc -p web/tsconfig.testes-servidor.json",
     "lint": "biome check src web ferramentas",
     "format": "biome check --write src web ferramentas",
     "verificar": "npm run lint && npm run typecheck && npm test && npm run build && npm run web:build",
@@ -26,7 +26,7 @@
     "web:build": "tsc -p web/tsconfig.servidor.json && tsc -p web/tsconfig.navegador.json",
     "web": "node web/dist/servidor.js",
     "web:env": "node --env-file=.env web/dist/servidor.js",
-    "test": "node --import tsx --test \"src/**/*.test.ts\" \"web/navegador/*.test.ts\""
+    "test": "node --import tsx --test \"src/**/*.test.ts\" \"web/navegador/*.test.ts\" \"web/servidor/*.test.ts\""
   },
   "keywords": [
     "restaurante",

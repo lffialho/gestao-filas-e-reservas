@@ -45,7 +45,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 278 testes |
+| `npm test` | 296 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -68,6 +68,8 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_BACKUP_COPIAS` | `28` | Quantas cópias guardar — 28 × 6 h ≈ uma semana |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
+| `PAINEL_SENHA` | — | Senha do painel. Sem ela o painel se recusa a subir |
+| `PAINEL_SEM_SENHA` | — | `1` abre o painel a quem alcançar a porta. Só para desenvolvimento |
 
 A porta do serviço aparece em duas variáveis — `PORTA`, para ele, e `SALAO_API`, para o
 painel achá-lo — e o `.env.example` já traz as duas preenchidas. **Mudar uma sem mudar a
@@ -301,6 +303,44 @@ Dois processos, de propósito. **O painel existe por causa do token**: `SALAO_TO
 mesas do salão. Então `web/servidor` guarda o token, serve `web/publico/` e repassa `/api/...`
 para o serviço pondo o cabeçalho ali. O `Authorization` que chega do navegador é descartado —
 quem fala com o serviço não escolhe a credencial.
+
+### A senha do painel
+
+Esconder o token do navegador cria a outra ponta do problema, e ela não é óbvia: **como é o
+painel que carrega a credencial, quem alcança o painel manda no salão** — sem token nenhum. E
+o painel escuta na rede de propósito, que é como o tablet do balcão o abre. Sem senha,
+qualquer um no wifi do restaurante abre `http://<ip-do-balcão>:5173` e senta gente, libera
+mesa, tira mesa da planta e fecha o dia.
+
+Daí `PAINEL_SENHA`, que é segredo de papel diferente do token: o token é o que o painel usa
+para falar com o serviço; a senha é o que uma pessoa usa para falar com o painel. **O painel
+se recusa a subir sem ela** — em desenvolvimento, `PAINEL_SEM_SENHA=1` abre, e a linha de
+subida diz em voz alta que está aberto.
+
+Pedida uma vez a cada 12 horas, que é um turno. A sessão é um cookie `HttpOnly`,
+`SameSite=Strict`, assinado com HMAC-SHA256 por uma chave **derivada da própria senha** — o
+que tem duas consequências boas: não há mais um segredo para configurar em cada casa, e a
+sessão sobrevive ao painel reiniciar, então ninguém é deslogado quando o Agendador levanta o
+processo no meio do sábado. Trocar a senha invalida as sessões abertas, que é o que se espera
+ao trocar uma senha. `/sair` encerra a sessão.
+
+Enquanto não autenticado, **nada de `publico/` é servido** — nem o CSS, nem o JS: tudo
+redireciona para `/entrar`, e `/api/...` responde `401` em JSON, para o painel saber pedir a
+senha em vez de mostrar "erro desconhecido". A tela de entrada é HTML autocontido, sem
+depender de nenhum arquivo protegido.
+
+Uma senha errada custa 400 ms e sai no log. Não é proteção contra força bruta de verdade —
+para isso a senha precisa ser boa. **Uma senha por instalação**, e nunca a mesma em todas as
+casas:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(9).toString('base64url'))"
+```
+
+O cookie não é `Secure`, porque o painel roda em `http://` na rede local e um cookie `Secure`
+simplesmente não seria mandado. Consequência: quem consegue ler o tráfego daquela rede lê o
+cookie. Numa rede de balcão é aceitável; numa rede compartilhada com os clientes, o certo é
+separar a rede — não é problema que senha nenhuma resolva.
 
 ```
 web/

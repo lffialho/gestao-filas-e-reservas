@@ -7,17 +7,33 @@ import {
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { paginaDeEntrada } from "./entrar.js";
+import {
+    cabecalhoDoCookie,
+    cabecalhoParaSair,
+    criarSessao,
+    DURACAO_EM_HORAS,
+    iguaisEmTempoConstante,
+    lerCookie,
+    NOME_DO_COOKIE,
+    sessaoValida
+} from "./sessao.js";
 
 /**
- * Servidor do painel. Faz duas coisas, e só elas.
+ * Servidor do painel. Faz três coisas, e só elas.
  *
- * Serve os arquivos de `publico/`, e repassa `/api/...` para a API do salão
- * **pondo o token aqui**. É esta a razão de o front ter um processo próprio:
+ * Serve os arquivos de `publico/`, repassa `/api/...` para a API do salão
+ * **pondo o token aqui**, e exige uma senha antes de qualquer uma das duas.
+ *
+ * O token ficar deste lado é a razão de o front ter um processo próprio:
  * `SALAO_TOKEN` é segredo único da equipe, e em JavaScript de navegador
  * qualquer um que abra o devtools libera todas as mesas do salão.
  *
- * Não tem estado, não tem sessão, não guarda nada. O que o navegador manda
- * atravessa; o que volta atravessa de volta.
+ * Mas esconder o token do navegador cria a outra ponta do problema: como é o
+ * painel que carrega a credencial, **quem alcança o painel manda no salão** sem
+ * precisar de token. E o painel escuta na rede de propósito — é assim que o
+ * tablet do balcão o abre. Sem senha, qualquer um no wifi do restaurante senta
+ * gente e fecha o dia. Daí a sessão: ver `sessao.ts`.
  */
 
 const AQUI = resolve(fileURLToPath(import.meta.url), "..", "..");
@@ -40,6 +56,30 @@ interface Configuracao {
     porta: number;
     api: URL;
     autorizacao: string | null;
+    /** `null` só com PAINEL_SEM_SENHA=1, que é para desenvolvimento. */
+    senha: string | null;
+}
+
+/**
+ * A senha do painel.
+ *
+ * **Exigida por padrão**, como o token do serviço. Quem esquece de configurar
+ * não pode acabar com um painel aberto na rede sem perceber — esse é justamente
+ * o modo de falhar que a senha existe para evitar, e ele é silencioso: o painel
+ * sobe, funciona, e só não pede nada a ninguém.
+ */
+function lerSenha(): string | null {
+    const senha = process.env["PAINEL_SENHA"];
+    if (senha !== undefined && senha.trim() !== "") {
+        return senha.trim();
+    }
+    if (process.env["PAINEL_SEM_SENHA"] === "1") {
+        return null;
+    }
+    throw new ConfiguracaoInvalida(
+        "Defina PAINEL_SENHA com a senha do painel, ou PAINEL_SEM_SENHA=1 em desenvolvimento.\n" +
+            "Sem isso, qualquer um na rede do restaurante abre o painel e manda no salão."
+    );
 }
 
 function lerConfiguracao(): Configuracao {
@@ -56,12 +96,14 @@ function lerConfiguracao(): Configuracao {
         throw new ConfiguracaoInvalida(`SALAO_API não é uma URL: "${bruto}".`);
     }
 
+    const senha = lerSenha();
+
     const token = process.env["SALAO_TOKEN"];
     if (token !== undefined && token.trim() !== "") {
-        return { porta, api, autorizacao: `Bearer ${token.trim()}` };
+        return { porta, api, autorizacao: `Bearer ${token.trim()}`, senha };
     }
     if (process.env["SALAO_SEM_AUTENTICACAO"] === "1") {
-        return { porta, api, autorizacao: null };
+        return { porta, api, autorizacao: null, senha };
     }
     throw new ConfiguracaoInvalida(
         "Defina SALAO_TOKEN com o mesmo token do serviço, ou SALAO_SEM_AUTENTICACAO=1 em desenvolvimento."
@@ -158,29 +200,162 @@ function repassar(
     requisicao.pipe(upstream);
 }
 
+/** Lê o corpo de um POST de formulário. Pequeno por natureza; teto por garantia. */
+async function lerFormulario(requisicao: IncomingMessage): Promise<URLSearchParams> {
+    const pedacos: Buffer[] = [];
+    let tamanho = 0;
+
+    for await (const pedaco of requisicao) {
+        tamanho += (pedaco as Buffer).length;
+        if (tamanho > 4096) {
+            throw new Error("Formulário grande demais.");
+        }
+        pedacos.push(pedaco as Buffer);
+    }
+    return new URLSearchParams(Buffer.concat(pedacos).toString("utf8"));
+}
+
+/**
+ * Espera um instante antes de responder a uma senha errada.
+ *
+ * Não é proteção de verdade contra força bruta — para isso a senha precisa ser
+ * boa. É o que transforma "milhares de tentativas por segundo" em "algumas por
+ * segundo", o suficiente para que tentar adivinhar de um celular no wifi deixe
+ * de ser prático e apareça no log antes de dar certo.
+ */
+function esperarUmPouco(): Promise<void> {
+    return new Promise((pronto) => setTimeout(pronto, 400));
+}
+
+async function tratarEntrada(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    senha: string
+): Promise<void> {
+    if (requisicao.method === "GET" || requisicao.method === "HEAD") {
+        responder(resposta, 200, TIPOS[".html"] ?? "text/html", paginaDeEntrada(null));
+        return;
+    }
+
+    if (requisicao.method !== "POST") {
+        responder(resposta, 405, "text/plain; charset=utf-8", "Só GET e POST aqui.");
+        return;
+    }
+
+    let campos: URLSearchParams;
+    try {
+        campos = await lerFormulario(requisicao);
+    } catch {
+        responder(resposta, 400, TIPOS[".html"] ?? "text/html", paginaDeEntrada("Pedido inválido."));
+        return;
+    }
+
+    if (!iguaisEmTempoConstante(campos.get("senha") ?? "", senha)) {
+        await esperarUmPouco();
+        process.stdout.write(`${new Date().toISOString()} senha errada no painel\n`);
+        responder(resposta, 401, TIPOS[".html"] ?? "text/html", paginaDeEntrada("Senha errada."));
+        return;
+    }
+
+    resposta.writeHead(303, {
+        Location: "/",
+        "Set-Cookie": cabecalhoDoCookie(criarSessao(senha), DURACAO_EM_HORAS * 60 * 60)
+    });
+    resposta.end();
+}
+
+function ehApi(caminho: string): boolean {
+    return caminho === "/api" || caminho.startsWith("/api/");
+}
+
+/**
+ * O portão: resolve tudo que diz respeito a entrar e sair.
+ *
+ * Devolve `true` quando já respondeu — aí não há mais o que atender. Separado
+ * de `atender` porque misturar as duas coisas numa função só passava do limite
+ * de complexidade do Biome, e o limite estava certo: são duas decisões
+ * diferentes, "esta pessoa pode?" e "o que ela pediu?".
+ */
+function portao(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    caminho: string,
+    senha: string | null
+): boolean {
+    if (caminho === "/sair") {
+        resposta.writeHead(303, { Location: "/entrar", "Set-Cookie": cabecalhoParaSair() });
+        resposta.end();
+        return true;
+    }
+
+    if (senha === null) {
+        return false;
+    }
+
+    if (caminho === "/entrar") {
+        void tratarEntrada(requisicao, resposta, senha);
+        return true;
+    }
+
+    if (sessaoValida(lerCookie(requisicao.headers.cookie, NOME_DO_COOKIE), senha)) {
+        return false;
+    }
+
+    // A API responde em JSON, para o painel saber reagir; o resto manda a
+    // pessoa para a tela de entrada. Devolver HTML a um fetch faria o painel
+    // mostrar "erro desconhecido" no lugar de pedir a senha.
+    if (ehApi(caminho)) {
+        responder(
+            resposta,
+            401,
+            "application/json; charset=utf-8",
+            JSON.stringify({
+                erro: { tipo: "PainelNaoAutenticado", mensagem: "Entre no painel de novo." }
+            })
+        );
+        return true;
+    }
+
+    resposta.writeHead(303, { Location: "/entrar" });
+    resposta.end();
+    return true;
+}
+
+function atender(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    caminho: string,
+    config: Configuracao
+): void {
+    if (ehApi(caminho)) {
+        repassar(requisicao, resposta, requisicao.url ?? "/", config);
+        return;
+    }
+
+    if (requisicao.method !== "GET" && requisicao.method !== "HEAD") {
+        responder(resposta, 405, "text/plain; charset=utf-8", "Só GET aqui.");
+        return;
+    }
+
+    void servirEstatico(caminho, resposta);
+}
+
 function iniciar(): void {
     const config = lerConfiguracao();
 
     const servidor = createServer((requisicao, resposta) => {
         const caminho = new URL(requisicao.url ?? "/", "http://local").pathname;
 
-        if (caminho === "/api" || caminho.startsWith("/api/")) {
-            repassar(requisicao, resposta, requisicao.url ?? "/", config);
-            return;
+        if (!portao(requisicao, resposta, caminho, config.senha)) {
+            atender(requisicao, resposta, caminho, config);
         }
-
-        if (requisicao.method !== "GET" && requisicao.method !== "HEAD") {
-            responder(resposta, 405, "text/plain; charset=utf-8", "Só GET aqui.");
-            return;
-        }
-
-        void servirEstatico(caminho, resposta);
     });
 
     servidor.listen(config.porta, () => {
         process.stdout.write(
             `painel em http://localhost:${config.porta} — api em ${config.api.origin}` +
-                `${config.autorizacao === null ? " (sem token)" : ""}\n`
+                `${config.autorizacao === null ? " (sem token)" : ""}` +
+                `${config.senha === null ? " — SEM SENHA, aberto a quem alcançar esta porta" : ""}\n`
         );
     });
 
