@@ -542,12 +542,12 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`
   nem matam. A cópia periódica cobre o buraco; a mais recente pode ser de até seis horas
   atrás.
-- **Da restauração, falta ensaiar o caso em que o banco é o do serviço instalado.** O que foi
-  exercitado num Windows 11 real: escolher a cópia, recusar cópia corrompida sem tocar no
-  banco, guardar o banco anterior com `-wal` e `-shm` junto, e conferir o arquivo restaurado.
-  O trecho que para as tarefas, espera o arquivo ser solto e as sobe de novo só roda quando o
-  alvo é o banco do `.env` — e esse caminho ainda não foi executado contra uma instalação de
-  pé. Rodar com `-Ensaio` na máquina do balcão fecha essa lacuna.
+- **Da restauração, falta executar a troca com o serviço de pé.** Num Windows 11 real já foram
+  exercitados: escolher a cópia, recusar cópia corrompida sem tocar no banco, guardar o banco
+  anterior com `-wal` e `-shm` junto, conferir o arquivo restaurado, e — contra uma instalação
+  no ar, em `-Ensaio` — reconhecer que o alvo é o banco do serviço e planejar parar e subir as
+  tarefas. O que nunca rodou de verdade é esse trecho final: parar, esperar o arquivo ser
+  solto, trocar e subir.
 - **Do script de instalação do Windows, só as conferências foram executadas de verdade.**
   Num Windows 11 real: caminhos, detecção do Node e as cinco recusas (sem build, build pela
   metade, sem `.env`, `.env` sem `SALAO_TOKEN`, token vazio) param com a mensagem certa. O
