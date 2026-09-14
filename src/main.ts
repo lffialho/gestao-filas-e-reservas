@@ -1,5 +1,7 @@
+import { dirname, join, resolve } from "node:path";
 import { criarRegistradorJson, descreverErro, type Registrador } from "./compartilhado/log/registrador.js";
 import { Mesa } from "./dominio/entidades/mesa.js";
+import { RotinaDeBackup } from "./infra/backup/rotina-de-backup.js";
 import type { Notificador } from "./dominio/portas/notificador.js";
 import type { RepositorioDoSalao } from "./dominio/portas/repositorio-do-salao.js";
 import { MotorGerente } from "./dominio/servicos/motor-gerente.js";
@@ -18,6 +20,10 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_BANCO           | —      | Arquivo SQLite; sem ela, salão em memória       |
  * | SALAO_TOKEN           | —      | Token da equipe, exigido em toda rota menos /saude |
  * | SALAO_SEM_AUTENTICACAO| —      | "1" abre a API; só para desenvolvimento         |
+ * | SALAO_BACKUP          | —      | "0" desliga as cópias do banco                  |
+ * | SALAO_BACKUP_PASTA    | backups/ ao lado do banco | Onde as cópias ficam |
+ * | SALAO_BACKUP_HORAS    | 6      | De quantas em quantas horas copiar              |
+ * | SALAO_BACKUP_COPIAS   | 28     | Quantas cópias guardar (28 × 6h ≈ uma semana)   |
  */
 
 /**
@@ -71,9 +77,46 @@ function lerAutenticacao(registrador: Registrador): Autenticador {
     );
 }
 
+function inteiroDoAmbiente(nome: string, padrao: number, minimo: number): number {
+    const bruto = process.env[nome];
+    if (bruto === undefined || bruto.trim() === "") {
+        return padrao;
+    }
+    const valor = Number(bruto);
+    if (!Number.isInteger(valor) || valor < minimo) {
+        throw new ConfiguracaoInvalida(`${nome} inválida: "${bruto}" (inteiro ≥ ${minimo}).`);
+    }
+    return valor;
+}
+
+/**
+ * A rotina de cópias do banco.
+ *
+ * **Ligada por padrão.** Quem esquece a variável não pode ficar sem backup —
+ * esse é justamente o modo de falhar que a rotina existe para evitar. As cópias
+ * vão para `backups/` ao lado do arquivo do banco, salvo indicação em
+ * contrário, e `SALAO_BACKUP=0` desliga para quem realmente quiser.
+ */
+function montarBackup(repositorio: RepositorioDoSalaoSqlite, banco: string): RotinaDeBackup | null {
+    if (process.env["SALAO_BACKUP"] === "0") {
+        registrador.aviso("backup_desligado", {
+            detalhe: "SALAO_BACKUP=0: o estado do salão não está sendo copiado."
+        });
+        return null;
+    }
+
+    return new RotinaDeBackup((destino) => repositorio.copiarPara(destino), {
+        pasta: process.env["SALAO_BACKUP_PASTA"] ?? join(dirname(resolve(banco)), "backups"),
+        aCadaHoras: inteiroDoAmbiente("SALAO_BACKUP_HORAS", 6, 1),
+        copias: inteiroDoAmbiente("SALAO_BACKUP_COPIAS", 28, 1),
+        registrador
+    });
+}
+
 function montarArmazenamento(): {
     repositorio: RepositorioDoSalao;
     descricao: string;
+    backup: RotinaDeBackup | null;
     fechar: () => void;
 } {
     const caminho = process.env["SALAO_BANCO"];
@@ -82,6 +125,8 @@ function montarArmazenamento(): {
         return {
             repositorio: new RepositorioDoSalaoEmMemoria({ mesas: MESAS_DE_ABERTURA() }),
             descricao: "memória (estado perdido ao encerrar)",
+            // Não há o que copiar de um salão que já se perde ao encerrar.
+            backup: null,
             fechar: () => {}
         };
     }
@@ -90,6 +135,7 @@ function montarArmazenamento(): {
     return {
         repositorio: sqlite,
         descricao: `SQLite em ${caminho}`,
+        backup: montarBackup(sqlite, caminho),
         fechar: () => sqlite.fechar()
     };
 }
@@ -121,6 +167,10 @@ function iniciar(): void {
             porta: typeof endereco === "object" && endereco !== null ? endereco.port : porta,
             armazenamento: armazenamento.descricao
         });
+
+        // Depois de a porta abrir: a primeira cópia não pode atrasar o salão
+        // a subir, e se a pasta estiver ruim o serviço atende mesmo assim.
+        armazenamento.backup?.iniciar();
     });
 
     servidor.on("error", (erro: unknown) => {
@@ -140,7 +190,19 @@ function iniciar(): void {
         encerrando = true;
 
         registrador.info("encerrando", { motivo });
+        armazenamento.backup?.parar();
+
         servidor.close(() => {
+            // Uma última cópia antes de fechar, quando dá: num encerramento
+            // gracioso ela é a mais recente que existe.
+            //
+            // **No Windows quase nunca dá.** Parar a tarefa no Agendador, ou
+            // qualquer supervisor, encerra o processo sem entregar sinal
+            // nenhum — medido: SIGTERM e SIGINT matam sem passar por aqui, e
+            // SIGBREAK e SIGHUP nem matam. Então esta cópia é um bônus do
+            // caminho gracioso, e não a garantia: quem garante é a cópia
+            // periódica, que não depende de o encerramento ser educado.
+            armazenamento.backup?.agora();
             armazenamento.fechar();
             registrador.info("encerrado");
         });

@@ -447,6 +447,23 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
         });
     }
 
+    /**
+     * Grava uma cópia consistente do banco em outro arquivo, **com o serviço
+     * de pé**.
+     *
+     * `VACUUM INTO` é a forma que o próprio SQLite dá para isso: a cópia sai
+     * de uma leitura transacional, então nunca contém metade de uma operação,
+     * e o arquivo já sai compactado e sem o WAL pendurado. Copiar o `.db` por
+     * fora, com `cp`, pode pegar o banco no meio de uma escrita e produzir um
+     * arquivo que não abre — é justamente no sábado cheio que isso aconteceria.
+     *
+     * O destino não pode existir: o SQLite recusa sobrescrever, e é bom que
+     * recuse — um backup que apaga o backup anterior não é backup.
+     */
+    copiarPara(destino: string): void {
+        this.#db.prepare("VACUUM INTO ?").run(destino);
+    }
+
     /** Fecha o banco. Chame ao encerrar o processo. */
     fechar(): void {
         this.#db.close();
