@@ -30,6 +30,18 @@ export class MesaDuplicada extends ErroDeDominio {
     }
 }
 
+/** Dois lugares diferentes não podem se chamar "mesa 7" para quem opera. */
+export class NumeroDeMesaDuplicado extends ErroDeDominio {
+    readonly numero: number;
+    readonly mesaId: string;
+
+    constructor(numero: number, mesaId: string) {
+        super(`Já existe uma mesa com o número ${numero} (id "${mesaId}").`);
+        this.numero = numero;
+        this.mesaId = mesaId;
+    }
+}
+
 export class MesaIndisponivel extends ErroDeDominio {
     readonly mesaId: string;
     readonly statusAtual: string;
@@ -92,6 +104,42 @@ export class ClienteJaNaFila extends ErroDeDominio {
     constructor(telefone: string) {
         super(`Já existe um cliente na fila com o telefone "${telefone}".`);
         this.telefone = telefone;
+    }
+}
+
+/**
+ * O telefone é a identidade do cliente: é por ele que se sai da fila e é para
+ * ele que o aviso de mesa pronta vai. A mesma identidade em duas mesas, ou
+ * sentada e esperando ao mesmo tempo, quebra as duas coisas.
+ */
+export class ClienteJaNoSalao extends ErroDeDominio {
+    readonly telefone: string;
+    readonly mesaId: string;
+
+    constructor(telefone: string, mesaId: string) {
+        super(`O telefone "${telefone}" já está sentado na mesa "${mesaId}".`);
+        this.telefone = telefone;
+        this.mesaId = mesaId;
+    }
+}
+
+/**
+ * Reserva a dedo para quem já está na fila: o telefone casa, o resto não.
+ * Sentar assim tiraria uma pessoa da fila e poria outra no lugar dela.
+ */
+export class IdentidadeDivergente extends ErroDeDominio {
+    readonly telefone: string;
+    readonly naFila: string;
+    readonly recebido: string;
+
+    constructor(telefone: string, naFila: string, recebido: string) {
+        super(
+            `O telefone "${telefone}" está na fila como ${naFila}, mas o pedido diz ${recebido}. ` +
+                "Tire o cliente da fila antes de mudar os dados dele."
+        );
+        this.telefone = telefone;
+        this.naFila = naFila;
+        this.recebido = recebido;
     }
 }
 

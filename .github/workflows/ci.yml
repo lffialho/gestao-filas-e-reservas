@@ -58,6 +58,10 @@ jobs:
           echo "saude responde:"
           curl -sf http://127.0.0.1:3000/saude
 
+          echo "HEAD /saude deve dar 200 (health check não usa 405):"
+          codigo=$(curl -s -I -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/saude)
+          test "$codigo" = "200" || { echo "esperava 200, recebi $codigo"; kill $SERVIDOR; exit 1; }
+
           echo "sem token deve dar 401:"
           codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/salao)
           test "$codigo" = "401" || { echo "esperava 401, recebi $codigo"; kill $SERVIDOR; exit 1; }

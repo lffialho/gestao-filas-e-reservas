@@ -29,9 +29,10 @@ CREATE TABLE IF NOT EXISTS fila (
     atendimento  TEXT
 );
 
-CREATE TABLE IF NOT EXISTS esperas (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    segundos INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS resumo_de_esperas (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    soma         INTEGER NOT NULL,
+    atendimentos INTEGER NOT NULL
 );
 `;
 
@@ -57,6 +58,11 @@ interface LinhaFila {
     atendimento: string | null;
 }
 
+interface LinhaResumo {
+    soma: number;
+    atendimentos: number;
+}
+
 export interface OpcoesDoRepositorioSqlite {
     /**
      * Mesas com que abrir o salão na primeira execução. São ignoradas se o
@@ -65,6 +71,12 @@ export interface OpcoesDoRepositorioSqlite {
      */
     mesas?: readonly Mesa[] | undefined;
     relogio?: Relogio | undefined;
+    /**
+     * Quanto esperar por uma trava tomada por outro processo, em ms. Zero — o
+     * padrão do SQLite — faz qualquer disputa falhar na hora com "database is
+     * locked", inclusive uma leitura que só esbarrou numa escrita em curso.
+     */
+    esperaPorTravaEmMs?: number | undefined;
 }
 
 /**
@@ -90,12 +102,49 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
 
         // WAL deixa leitura e escrita conviverem; IMMEDIATE já serializa escrita.
         this.#db.exec("PRAGMA journal_mode = WAL");
-        this.#db.exec("PRAGMA foreign_keys = ON");
+        this.#db.exec(`PRAGMA busy_timeout = ${opcoes.esperaPorTravaEmMs ?? 5000}`);
         this.#db.exec(ESQUEMA);
+        this.#migrarEsperasAntigas();
 
         const mesas = opcoes.mesas ?? [];
         if (mesas.length > 0) {
             this.#semearSeVazio(mesas);
+        }
+    }
+
+    /**
+     * Versões anteriores guardavam uma linha por atendimento na tabela
+     * `esperas`, e `#gravar` reescrevia a tabela inteira a cada transação —
+     * custo que crescia com o movimento do restaurante e nunca baixava. Dobra
+     * o que houver lá no resumo, com o mesmo tempo médio, e apaga a tabela.
+     */
+    #migrarEsperasAntigas(): void {
+        const antiga = this.#db
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'esperas'")
+            .get();
+        if (antiga === undefined) {
+            return;
+        }
+
+        this.#db.exec("BEGIN IMMEDIATE");
+        try {
+            const acumulado = this.#db
+                .prepare("SELECT COALESCE(SUM(segundos), 0) AS soma, COUNT(*) AS atendimentos FROM esperas")
+                .get() as unknown as LinhaResumo;
+
+            if (acumulado.atendimentos > 0) {
+                const atual = this.#lerResumo();
+                this.#gravarResumo({
+                    soma: atual.soma + acumulado.soma,
+                    atendimentos: atual.atendimentos + acumulado.atendimentos
+                });
+            }
+
+            this.#db.exec("DROP TABLE esperas");
+            this.#db.exec("COMMIT");
+        } catch (erro) {
+            this.#desfazer();
+            throw erro;
         }
     }
 
@@ -108,33 +157,82 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
             if (total === 0) {
                 this.#gravar({
                     mesas: mesas.map((mesa) => mesa.estado()),
-                    fila: { itens: [], esperasEmSegundos: [] }
+                    fila: { itens: [], esperas: { somaEmSegundos: 0, atendimentos: 0 } }
                 });
             }
             this.#db.exec("COMMIT");
         } catch (erro) {
+            this.#desfazer();
+            throw erro;
+        }
+    }
+
+    /**
+     * Desfaz sem mascarar. Se a transação já caiu por conta do próprio SQLite,
+     * o ROLLBACK falha — e deixar esse erro subir trocaria a causa real
+     * ("database is locked") por um "no transaction is active" sem sentido.
+     */
+    #desfazer(): void {
+        try {
             this.#db.exec("ROLLBACK");
+        } catch {
+            // Não havia transação aberta: nada a desfazer.
+        }
+    }
+
+    /**
+     * `BEGIN` fica fora do `try` de propósito: se ele falhar, não há transação
+     * a desfazer, e o erro sobe como veio.
+     */
+    #dentroDe<T>(inicio: string, operacao: (salao: Salao) => T, gravar: boolean): T {
+        this.#db.exec(inicio);
+        try {
+            const salao = Salao.reconstituir(this.#carregar(), this.#relogio);
+            const resultado = operacao(salao);
+            if (gravar) {
+                this.#gravar(salao.estado());
+            }
+            this.#db.exec("COMMIT");
+            return resultado;
+        } catch (erro) {
+            this.#desfazer();
             throw erro;
         }
     }
 
     async transacao<T>(operacao: (salao: Salao) => T): Promise<T> {
-        this.#db.exec("BEGIN IMMEDIATE");
-        try {
-            const salao = Salao.reconstituir(this.#carregar(), this.#relogio);
-            const resultado = operacao(salao);
-            this.#gravar(salao.estado());
-            this.#db.exec("COMMIT");
-            return resultado;
-        } catch (erro) {
-            this.#db.exec("ROLLBACK");
-            throw erro;
-        }
+        return this.#dentroDe("BEGIN IMMEDIATE", operacao, true);
+    }
+
+    /**
+     * Leitura: `DEFERRED` pega só a trava de leitura — em WAL ela nem espera
+     * uma escrita em curso — e nada é gravado no fim. Com `BEGIN IMMEDIATE` e
+     * regravação, como era antes, um `GET` competia com todo mundo e reescrevia
+     * as três tabelas para devolver um número.
+     */
+    async consulta<T>(leitura: (salao: Salao) => T): Promise<T> {
+        return this.#dentroDe("BEGIN DEFERRED", leitura, false);
+    }
+
+    #lerResumo(): LinhaResumo {
+        const linha = this.#db
+            .prepare("SELECT soma, atendimentos FROM resumo_de_esperas WHERE id = 1")
+            .get() as unknown as LinhaResumo | undefined;
+        return linha ?? { soma: 0, atendimentos: 0 };
+    }
+
+    #gravarResumo(resumo: LinhaResumo): void {
+        this.#db
+            .prepare("INSERT OR REPLACE INTO resumo_de_esperas (id, soma, atendimentos) VALUES (1, ?, ?)")
+            .run(resumo.soma, resumo.atendimentos);
     }
 
     #carregar(): EstadoDoSalao {
+        // `numero` é único, mas o id desempata caso um banco antigo traga
+        // duplicata: ordem instável faria o mesmo salão sair diferente a cada
+        // reinício.
         const linhasMesas = this.#db
-            .prepare("SELECT * FROM mesas ORDER BY numero")
+            .prepare("SELECT * FROM mesas ORDER BY numero, id")
             .all() as unknown as LinhaMesa[];
 
         const mesas: EstadoDaMesa[] = linhasMesas.map((linha) => ({
@@ -175,17 +273,20 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
             dataAtendimento: linha.atendimento
         }));
 
-        const esperas = this.#db.prepare("SELECT segundos FROM esperas ORDER BY id").all() as unknown as {
-            segundos: number;
-        }[];
+        const resumo = this.#lerResumo();
 
-        return { mesas, fila: { itens, esperasEmSegundos: esperas.map((e) => e.segundos) } };
+        return {
+            mesas,
+            fila: {
+                itens,
+                esperas: { somaEmSegundos: resumo.soma, atendimentos: resumo.atendimentos }
+            }
+        };
     }
 
     #gravar(estado: EstadoDoSalao): void {
         this.#db.exec("DELETE FROM mesas");
         this.#db.exec("DELETE FROM fila");
-        this.#db.exec("DELETE FROM esperas");
 
         const inserirMesa = this.#db.prepare(
             `INSERT INTO mesas
@@ -224,10 +325,12 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
             );
         });
 
-        const inserirEspera = this.#db.prepare("INSERT INTO esperas (segundos) VALUES (?)");
-        for (const segundos of estado.fila.esperasEmSegundos) {
-            inserirEspera.run(segundos);
-        }
+        // Uma linha, sempre a mesma: o custo de gravar não cresce com quantas
+        // pessoas o salão já atendeu.
+        this.#gravarResumo({
+            soma: estado.fila.esperas.somaEmSegundos,
+            atendimentos: estado.fila.esperas.atendimentos
+        });
     }
 
     /** Fecha o banco. Chame ao encerrar o processo. */

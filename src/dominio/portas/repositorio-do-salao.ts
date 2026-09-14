@@ -19,7 +19,15 @@ import type { Salao } from "../entidades/salao.js";
  * O salão inteiro é um agregado pequeno — dezenas de mesas, dezenas de pessoas
  * na fila — então carregá-lo por transação é aceitável. Se um dia deixar de
  * ser, o contrato permite que a implementação leia e escreva por linha.
+ *
+ * `consulta` é o mesmo contrato sem escrita: enxerga um salão coerente e
+ * promete não gravar nada. A separação não é cosmética — quando toda leitura
+ * passava por `transacao`, um `GET` tomava a trava de escrita do banco e
+ * reescrevia o salão inteiro, de modo que dois processos não conseguiam nem
+ * ler ao mesmo tempo. O que a operação devolve tem de ser retrato, não
+ * entidade viva: o salão emprestado deixa de valer quando a chamada termina.
  */
 export interface RepositorioDoSalao {
     transacao<T>(operacao: (salao: Salao) => T): Promise<T>;
+    consulta<T>(leitura: (salao: Salao) => T): Promise<T>;
 }

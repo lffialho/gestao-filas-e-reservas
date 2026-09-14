@@ -81,10 +81,11 @@ function rotas(motor: MotorGerente): Rota[] {
             corpo: { itens: (await motor.consultarFila()).map(itemFilaJson) }
         })),
 
+        /** Cadastra a mesa. Se alguém da fila couber nela, já sai sentado. */
         rota("POST", "/mesas", async ({ corpo }) => {
             const mesa = new Mesa(texto(corpo, "id"), inteiro(corpo, "numero"), inteiro(corpo, "capacidade"));
-            await motor.adicionarMesa(mesa);
-            return { status: 201, corpo: await motor.consultarMesa(mesa.id) };
+            const { mesa: criada } = await motor.adicionarMesa(mesa);
+            return { status: 201, corpo: criada };
         }),
 
         rota("GET", "/mesas/:id", async ({ parametros }) => {
@@ -273,21 +274,40 @@ interface PedidoADespachar {
  * Decide o que responder: roteia, autentica, lê o corpo e chama a rota.
  * Separado do manipulador para que este cuide só de E/S e de erro.
  */
+/**
+ * Segmentos do caminho, já percent-decodificados. Um telefone em E.164 chega
+ * como `/fila/%2B5511999999999`, e é "+5511999999999" que o domínio conhece —
+ * casar o segmento cru faria o cliente nunca sair da fila.
+ */
 function segmentosDe(caminho: string): string[] {
-    return caminho.split("/").filter((s) => s !== "");
+    return caminho
+        .split("/")
+        .filter((s) => s !== "")
+        .map((segmento) => {
+            try {
+                return decodeURIComponent(segmento);
+            } catch {
+                throw new DadosInvalidos(`Segmento de caminho mal codificado: "${segmento}".`);
+            }
+        });
 }
 
 async function despachar(pedido: PedidoADespachar): Promise<RespostaComCabecalhos> {
     const { todas, autenticador, requisicao, metodo, caminho } = pedido;
     const segmentos = segmentosDe(caminho);
 
-    const { casamento, caminhoExiste, metodosAceitos } = casar(todas, metodo, segmentos);
+    // HEAD roteia como GET; quem suprime o corpo na resposta é o próprio
+    // node:http. Sem isto todo health check por HEAD levaria 405.
+    const metodoDaRota = metodo === "HEAD" ? "GET" : metodo;
+
+    const { casamento, caminhoExiste, metodosAceitos } = casar(todas, metodoDaRota, segmentos);
 
     if (casamento === null) {
         if (caminhoExiste) {
+            const permitidos = metodosAceitos.includes("GET") ? [...metodosAceitos, "HEAD"] : metodosAceitos;
             return {
                 status: 405,
-                cabecalhos: { Allow: metodosAceitos.join(", ") },
+                cabecalhos: { Allow: permitidos.join(", ") },
                 corpo: {
                     erro: { tipo: "MetodoNaoPermitido", mensagem: `${metodo} não é aceito neste recurso.` }
                 }
@@ -314,7 +334,7 @@ async function despachar(pedido: PedidoADespachar): Promise<RespostaComCabecalho
         };
     }
 
-    const corpo = metodo === "GET" || metodo === "DELETE" ? {} : await lerCorpo(requisicao);
+    const corpo = metodoDaRota === "GET" || metodoDaRota === "DELETE" ? {} : await lerCorpo(requisicao);
     return casamento.rota.manipular({ parametros: casamento.parametros, corpo });
 }
 

@@ -116,10 +116,10 @@ describe("FilaDeEspera", () => {
             const item = fila.adicionar(cliente("Ana", 2, "1111"));
 
             relogio.avancarSegundos(90);
-            fila.confirmarAtendimento(item);
+            const atendido = fila.confirmarAtendimento(item);
 
             assert.equal(fila.tamanhoDaFila, 0);
-            assert.equal(item.dataAtendimento?.getTime(), 90_000);
+            assert.equal(atendido.dataAtendimento?.getTime(), 90_000);
             assert.equal(fila.tempoMedioDeEsperaEmSegundos, 90);
         });
 

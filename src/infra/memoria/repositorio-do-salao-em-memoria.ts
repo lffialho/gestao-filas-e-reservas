@@ -49,4 +49,13 @@ export class RepositorioDoSalaoEmMemoria implements RepositorioDoSalao {
             }
         });
     }
+
+    /**
+     * Leitura: entra na mesma fila da trava, para não enxergar o salão no meio
+     * de uma mudança, mas não fotografa o estado antes nem restaura depois —
+     * não há o que desfazer numa operação que só lê.
+     */
+    async consulta<T>(leitura: (salao: Salao) => T): Promise<T> {
+        return this.#trava.executarComExclusividade(CHAVE_SALAO, () => leitura(this.#salao));
+    }
 }
