@@ -311,3 +311,38 @@ describe("RepositorioDoSalaoSqlite — leitura e escrita", () => {
         }
     });
 });
+
+describe("RepositorioDoSalaoSqlite — banco sem a coluna desde", () => {
+    it("acrescenta a coluna e passa a contar a partir da migração", async () => {
+        const banco = bancoTemporario();
+        const antigo = new DatabaseSync(banco.caminho);
+        antigo.exec(`
+            CREATE TABLE mesas (
+                id TEXT PRIMARY KEY, numero INTEGER NOT NULL, capacidade INTEGER NOT NULL,
+                status TEXT NOT NULL, cliente_nome TEXT, cliente_telefone TEXT, cliente_pessoas INTEGER,
+                cliente_chegada TEXT, coluna INTEGER, linha INTEGER);
+            CREATE TABLE fila (
+                ordem INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL,
+                pessoas INTEGER NOT NULL, chegada TEXT NOT NULL, entrada TEXT NOT NULL, atendimento TEXT);
+            INSERT INTO mesas (id, numero, capacidade, status, coluna, linha)
+                VALUES ('m1', 1, 2, 'DISPONIVEL', 0, 0);
+        `);
+        antigo.close();
+
+        const relogio = { agora: (): Date => new Date(1_700_000_000_000) };
+        const repositorio = new RepositorioDoSalaoSqlite(banco.caminho, { relogio });
+        try {
+            const info = await repositorio.consulta((salao) => salao.consultarMesa("m1"));
+            assert.ok(info);
+            assert.equal(
+                new Date(info.desde).getTime(),
+                1_700_000_000_000,
+                "não dá para saber quando a mesa entrou nesse status, então conta da migração"
+            );
+            assert.equal(info.status, StatusMesa.DISPONIVEL);
+        } finally {
+            repositorio.fechar();
+            banco.apagar();
+        }
+    });
+});

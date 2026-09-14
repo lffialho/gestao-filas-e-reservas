@@ -43,7 +43,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
-| `npm test` | 193 testes |
+| `npm test` | 199 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -100,6 +100,13 @@ cabe naquela mesa, só ele pode recebê-la — e quem senta é o cliente que já
 com a hora de chegada dele. Se o nome ou o tamanho do grupo do pedido não baterem com o que
 está na fila, a resposta é `409 IdentidadeDivergente` em vez de uma troca silenciosa.
 
+**Toda mesa diz desde quando.** O campo `desde` marca o instante em que a mesa entrou no
+status atual, e muda só nas transições — arrastar a mesa na planta não faz o grupo sentar de
+novo. É daí que saem duas coisas que o status sozinho não responde: há quanto tempo o grupo
+está na mesa, e há quanto tempo quem foi chamado ainda não apareceu. Bancos de versões
+anteriores ganham a coluna na primeira abertura, contando a partir da migração — não há como
+descobrir depois quando cada mesa entrou no status em que está.
+
 **O telefone é a identidade.** O mesmo número não pode estar em duas mesas, nem sentado e na
 fila ao mesmo tempo — é por ele que se desiste da fila e é para ele que o aviso de mesa
 pronta vai.
@@ -115,6 +122,7 @@ curl -X POST localhost:3000/chegadas \
 {
   "destino": "mesa",
   "mesa": { "id": "m1", "numero": 1, "capacidade": 2, "status": "RESERVADA",
+            "desde": "2026-09-13T23:12:04.118Z",
             "cliente": { "nome": "Ana e Bruno", "telefone": "1111", "quantidadePessoas": 2 } }
 }
 ```

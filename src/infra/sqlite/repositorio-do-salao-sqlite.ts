@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS mesas (
     cliente_pessoas   INTEGER,
     cliente_chegada   TEXT,
     coluna            INTEGER,
-    linha             INTEGER
+    linha             INTEGER,
+    desde             TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS fila (
@@ -47,6 +48,7 @@ interface LinhaMesa {
     cliente_chegada: string | null;
     coluna: number | null;
     linha: number | null;
+    desde: string;
 }
 
 interface LinhaFila {
@@ -104,11 +106,37 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
         this.#db.exec("PRAGMA journal_mode = WAL");
         this.#db.exec(`PRAGMA busy_timeout = ${opcoes.esperaPorTravaEmMs ?? 5000}`);
         this.#db.exec(ESQUEMA);
+        this.#migrarColunaDesde();
         this.#migrarEsperasAntigas();
 
         const mesas = opcoes.mesas ?? [];
         if (mesas.length > 0) {
             this.#semearSeVazio(mesas);
+        }
+    }
+
+    /**
+     * Bancos anteriores não guardavam desde quando cada mesa está no seu
+     * status. Não dá para descobrir isso depois, então as mesas existentes
+     * passam a contar a partir da migração — errado por uma noite, e certo
+     * daí em diante.
+     */
+    #migrarColunaDesde(): void {
+        const colunas = this.#db.prepare("PRAGMA table_info(mesas)").all() as unknown as { name: string }[];
+        if (colunas.some((coluna) => coluna.name === "desde")) {
+            return;
+        }
+
+        this.#db.exec("BEGIN IMMEDIATE");
+        try {
+            this.#db.exec("ALTER TABLE mesas ADD COLUMN desde TEXT NOT NULL DEFAULT ''");
+            this.#db
+                .prepare("UPDATE mesas SET desde = ? WHERE desde = ''")
+                .run(this.#relogio.agora().toISOString());
+            this.#db.exec("COMMIT");
+        } catch (erro) {
+            this.#desfazer();
+            throw erro;
         }
     }
 
@@ -240,6 +268,7 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
             numero: linha.numero,
             capacidade: linha.capacidade,
             status: linha.status as StatusMesa,
+            desde: linha.desde,
             posicao:
                 linha.coluna === null || linha.linha === null
                     ? null
@@ -291,8 +320,8 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
         const inserirMesa = this.#db.prepare(
             `INSERT INTO mesas
                 (id, numero, capacidade, status, cliente_nome, cliente_telefone, cliente_pessoas,
-                 cliente_chegada, coluna, linha)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                 cliente_chegada, coluna, linha, desde)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         );
         for (const mesa of estado.mesas) {
             inserirMesa.run(
@@ -305,7 +334,8 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
                 mesa.cliente?.quantidadePessoas ?? null,
                 mesa.cliente?.horaChegada ?? null,
                 mesa.posicao?.coluna ?? null,
-                mesa.posicao?.linha ?? null
+                mesa.posicao?.linha ?? null,
+                mesa.desde
             );
         }
 

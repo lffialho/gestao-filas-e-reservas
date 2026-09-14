@@ -26,6 +26,8 @@ export interface InfoMesa {
     status: StatusMesa;
     cliente: InfoCliente | null;
     posicao: Posicao | null;
+    /** ISO 8601 — desde quando a mesa está neste status. */
+    desde: string;
 }
 
 export interface InfoCliente {
@@ -82,6 +84,7 @@ function retratar(mesa: Mesa): InfoMesa {
         capacidade: mesa.capacidade,
         status: mesa.status,
         posicao: mesa.posicao,
+        desde: mesa.desde.toISOString(),
         cliente:
             cliente === null
                 ? null
@@ -121,10 +124,12 @@ function conferirIdentidade(naFila: Cliente, recebido: Cliente): void {
 export class Salao {
     #mesas: Map<string, Mesa>;
     #filaDeEspera: FilaDeEspera;
+    #relogio: Relogio;
 
     constructor(relogio: Relogio = relogioDoSistema, mesas: readonly Mesa[] = []) {
         this.#mesas = new Map<string, Mesa>();
         this.#filaDeEspera = new FilaDeEspera(relogio);
+        this.#relogio = relogio;
         for (const mesa of mesas) {
             this.#registrarMesa(mesa);
         }
@@ -161,7 +166,10 @@ export class Salao {
             }
         }
 
-        const propria = Mesa.reconstituir(mesa.estado());
+        // O clone herda o relógio do salão: sem isso as transições da mesa
+        // marcariam a hora do sistema enquanto a fila conta pelo relógio
+        // injetado, e os dois tempos não bateriam.
+        const propria = Mesa.reconstituir(mesa.estado(), this.#relogio);
         const desejada = propria.posicao;
 
         if (desejada === null) {

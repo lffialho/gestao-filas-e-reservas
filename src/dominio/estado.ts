@@ -26,6 +26,12 @@ export interface EstadoDaMesa {
     cliente: EstadoDoCliente | null;
     /** Ladrilho da planta. `null` só antes de o salão colocar a mesa. */
     posicao: Posicao | null;
+    /**
+     * Desde quando a mesa está neste status, em ISO 8601. É daqui que saem o
+     * prazo de quem foi chamado e há quanto tempo o grupo está na mesa — sem
+     * isso o status diz o quê, mas nunca desde quando.
+     */
+    desde: string;
 }
 
 export interface EstadoDoItemFila {

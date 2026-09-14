@@ -285,6 +285,25 @@ export function verificarContratoDoRepositorio(
             }
         });
 
+        it("desde quando a mesa está no status atravessa transações", async () => {
+            const relogio = new RelogioDeTeste();
+            const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+            try {
+                relogio.avancarSegundos(120);
+                await repositorio.transacao((salao) => salao.receberCliente(cliente("Ana", 2, "1111")));
+
+                const info = await repositorio.consulta((salao) => salao.consultarMesa("m2"));
+                assert.ok(info);
+                assert.equal(
+                    new Date(info.desde).getTime(),
+                    120_000,
+                    "o prazo de quem foi chamado não pode reiniciar a cada transação"
+                );
+            } finally {
+                fechar();
+            }
+        });
+
         it("o tempo médio de espera atravessa transações", async () => {
             const relogio = new RelogioDeTeste();
             const { repositorio, fechar } = criar({ mesas: [new Mesa("unica", 1, 2)], relogio });
