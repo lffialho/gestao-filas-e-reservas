@@ -89,6 +89,7 @@ export interface ResumoDoPeriodo {
 
 export type TipoDeEvento =
     | "mesa_cadastrada"
+    | "mesa_removida"
     | "sentou_direto"
     | "entrou_na_fila"
     | "saiu_da_fila"
@@ -232,5 +233,8 @@ export const api = {
         }),
 
     cadastrarMesa: (id: string, numero: number, capacidade: number): Promise<InfoMesa> =>
-        pedir("/mesas", { method: "POST", body: JSON.stringify({ id, numero, capacidade }) })
+        pedir("/mesas", { method: "POST", body: JSON.stringify({ id, numero, capacidade }) }),
+
+    removerMesa: (mesaId: string): Promise<InfoMesa> =>
+        pedir(`/mesas/${encodeURIComponent(mesaId)}`, { method: "DELETE" })
 };

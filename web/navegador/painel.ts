@@ -13,6 +13,7 @@ import { desenharDiario } from "./diario.js";
 import { el, exigir, trocar } from "./dom.js";
 import { desenharFila } from "./fila.js";
 import { Modal } from "./modal.js";
+import { formularioDeMesa, ligarArrasto, proximoNumeroLivre } from "./montagem.js";
 import { desenharPlanta } from "./planta.js";
 import { atualizarRelogios } from "./relogios.js";
 import { dataPorExtenso, duracao, fimDoDia, horaMinuto, inicioDoDia } from "./tempo.js";
@@ -93,6 +94,17 @@ function tomDaOcupacao(percentual: number): Cartao["tom"] {
 const plural = (quantidade: number, singular: string, plural: string): string =>
     quantidade === 1 ? singular : plural;
 
+/**
+ * Um id para a mesa nova.
+ *
+ * Não usa `crypto.randomUUID`: ele só existe em contexto seguro, e o painel do
+ * balcão roda em `http://` num IP da rede local do restaurante — justamente
+ * onde ele não existe. O id só precisa não repetir dentro deste salão.
+ */
+function idDeMesaNova(): string {
+    return `mesa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export class Painel {
     readonly #regiao = {
         relogio: exigir("#relogio"),
@@ -110,6 +122,12 @@ export class Painel {
     #semContato: string | null = null;
     #buscando = false;
 
+    /** Modo de montar a planta, separado do modo de operar. */
+    #montando = false;
+    /** Enquanto uma mesa está na mão, o poll não troca a planta por baixo dela. */
+    #arrastando = false;
+    #desligarArrasto: (() => void) | null = null;
+
     constructor() {
         this.#modal = new Modal(exigir("#modal"), () => void this.#atualizar());
 
@@ -123,6 +141,10 @@ export class Painel {
         // Ouvindo no contêiner, e não no cartão: o cartão é substituído a cada
         // atualização, o contêiner fica.
         this.#regiao.planta.addEventListener("click", (evento) => {
+            // Montando, quem cuida do toque é o arrasto: clicar não senta ninguém.
+            if (this.#montando) {
+                return;
+            }
             const id = this.#atributoDoAlvo(evento, ".mesa", "mesa");
             if (id !== undefined) {
                 this.#abrirMesa(id);
@@ -136,6 +158,8 @@ export class Painel {
         });
 
         exigir("#chegou").addEventListener("click", () => this.#abrirChegada());
+        exigir("#montar").addEventListener("click", () => this.#alternarMontagem());
+        exigir("#nova-mesa").addEventListener("click", () => this.#abrirMesaNova());
         document.addEventListener("keydown", (evento) => this.#aoTeclar(evento));
     }
 
@@ -210,7 +234,11 @@ export class Painel {
             return;
         }
 
-        trocar(this.#regiao.planta, ...desenharPlanta(estado.salao.mesas, this.#termo));
+        // Mesa na mão não é trocada por baixo: é a mesma disciplina da busca e
+        // da janela, aplicada ao arrasto.
+        if (!this.#arrastando) {
+            trocar(this.#regiao.planta, ...desenharPlanta(estado.salao.mesas, this.#termo));
+        }
         trocar(this.#regiao.cartoes, ...this.#cartoes(estado));
         trocar(this.#regiao.diario, ...desenharDiario(estado.eventos));
         trocar(this.#regiao.fila, ...desenharFila(estado.fila, estado.salao.mesas, this.#termo));
@@ -382,6 +410,95 @@ export class Painel {
                     tom: "perigo",
                     executar: async () => {
                         await api.sairDaFila(telefone);
+                        return "";
+                    }
+                }
+            ]
+        });
+    }
+
+    /**
+     * Liga e desliga o modo de montar. Enquanto ele está ligado o corpo ganha
+     * uma classe, e é o CSS que muda a cara da planta — a tela tem de dizer
+     * sozinha que ali se mexe no salão, e não se opera.
+     */
+    #alternarMontagem(): void {
+        this.#montando = !this.#montando;
+        document.body.classList.toggle("montando", this.#montando);
+        exigir("#montar").classList.toggle("escolhido", this.#montando);
+        exigir("#nova-mesa").hidden = !this.#montando;
+
+        if (!this.#montando) {
+            this.#desligarArrasto?.();
+            this.#desligarArrasto = null;
+            return;
+        }
+
+        this.#desligarArrasto = ligarArrasto({
+            planta: this.#regiao.planta,
+            aoMudarEstado: (arrastando) => {
+                this.#arrastando = arrastando;
+            },
+            aoTocar: (mesaId) => this.#abrirMesaDaMontagem(mesaId),
+            aoSoltar: ({ mesaId, destino }) => {
+                void api.moverMesa(mesaId, destino).then(
+                    () => void this.#atualizar(),
+                    (erro: unknown) => {
+                        // Ladrilho ocupado, por exemplo: a planta volta ao que
+                        // o serviço diz, e o recado explica por quê.
+                        this.#semContato =
+                            erro instanceof ErroDaApi ? erro.message : "Não foi possível mover a mesa.";
+                        void this.#atualizar();
+                    }
+                );
+            }
+        });
+    }
+
+    #abrirMesaDaMontagem(mesaId: string): void {
+        const mesa = this.#estado?.salao.mesas.find((candidata) => candidata.id === mesaId);
+        if (mesa === undefined) {
+            return;
+        }
+
+        const livre = mesa.status === "DISPONIVEL";
+        this.#modal.abrir({
+            titulo: `Mesa ${mesa.numero} · ${mesa.capacidade} lugares`,
+            nota: livre
+                ? "Arraste a mesa na planta para mudá-la de lugar."
+                : "Esta mesa está em uso. Libere antes de tirá-la da planta.",
+            acoes: livre
+                ? [
+                      {
+                          rotulo: "Tirar da planta",
+                          confirmar: true,
+                          tom: "perigo",
+                          executar: async () => {
+                              await api.removerMesa(mesa.id);
+                              return "";
+                          }
+                      }
+                  ]
+                : []
+        });
+    }
+
+    #abrirMesaNova(): void {
+        const mesas = this.#estado?.salao.mesas ?? [];
+        const formulario = formularioDeMesa(proximoNumeroLivre(mesas));
+
+        this.#modal.abrir({
+            titulo: "Nova mesa",
+            nota: "Ela entra no primeiro lugar livre da planta; depois é só arrastar.",
+            corpo: formulario.corpo,
+            acoes: [
+                {
+                    rotulo: "Cadastrar",
+                    confirmar: false,
+                    tom: "principal",
+                    executar: async () => {
+                        const { numero, capacidade } = formulario.ler();
+                        await api.cadastrarMesa(idDeMesaNova(), numero, capacidade);
                         return "";
                     }
                 }
