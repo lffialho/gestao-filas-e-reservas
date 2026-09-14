@@ -61,19 +61,54 @@ function deslocamentoEmMinutos(instante: Date): number {
 }
 
 /**
- * O instante em que começou o dia daquele instante, no fuso do salão.
+ * O instante da meia-noite daquela data, no fuso do salão.
  *
- * Duas passadas de propósito: a primeira chuta o deslocamento pelo próprio
- * instante recebido, a segunda confere pelo resultado. O Brasil não tem mais
- * horário de verão, mas o dia em que voltar, a virada continua certa.
+ * Duas passadas de propósito: a primeira chuta o deslocamento, a segunda
+ * confere pelo resultado. O Brasil não tem mais horário de verão, mas o dia em
+ * que voltar, a virada continua certa.
  */
+function meiaNoiteEm(ano: number, mes: number, dia: number): Date {
+    const comoUtc = Date.UTC(ano, mes - 1, dia);
+    const primeira = new Date(comoUtc - deslocamentoEmMinutos(new Date(comoUtc)) * 60_000);
+    return new Date(comoUtc - deslocamentoEmMinutos(primeira) * 60_000);
+}
+
+/** O instante em que começou o dia daquele instante, no fuso do salão. */
 export function inicioDoDia(instante: Date = new Date()): Date {
     const { ano, mes, dia } = partesEm(instante);
-    const meiaNoiteComoUtc = Date.UTC(ano, mes - 1, dia);
+    return meiaNoiteEm(ano, mes, dia);
+}
 
-    let palpite = new Date(meiaNoiteComoUtc - deslocamentoEmMinutos(instante) * 60_000);
-    palpite = new Date(meiaNoiteComoUtc - deslocamentoEmMinutos(palpite) * 60_000);
-    return palpite;
+/**
+ * O começo do dia de uma data escrita "AAAA-MM-DD" — o formato que o
+ * `<input type="date">` entrega — lida no fuso do salão.
+ *
+ * Passar essa string direto para `new Date()` a leria como meia-noite **UTC**,
+ * que em São Paulo é 21h do dia anterior: o fechamento de um dia sairia com as
+ * três últimas horas da véspera e sem as três últimas dele mesmo.
+ *
+ * Devolve `null` para o que não é data: quem chama decide o que dizer. Data que
+ * não existe — "2026-02-31" — também é `null`, e não 1º de março: `Date.UTC`
+ * rola o mês em silêncio, e relatório de dia inexistente é pedido errado, não
+ * pedido a corrigir sozinho.
+ */
+export function inicioDoDiaDe(data: string): Date | null {
+    const casamento = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(data.trim());
+    if (casamento === null) {
+        return null;
+    }
+
+    const [ano, mes, dia] = casamento.slice(1).map(Number);
+    if (ano === undefined || mes === undefined || dia === undefined) {
+        return null;
+    }
+
+    const meiaNoite = meiaNoiteEm(ano, mes, dia);
+    const conferencia = partesEm(meiaNoite);
+    if (conferencia.ano !== ano || conferencia.mes !== mes || conferencia.dia !== dia) {
+        return null;
+    }
+    return meiaNoite;
 }
 
 /** Começo do dia seguinte: o fim aberto do período de hoje. */
@@ -81,6 +116,18 @@ export function fimDoDia(instante: Date = new Date()): Date {
     const comeco = inicioDoDia(instante);
     // 26h à frente cai com folga no dia seguinte mesmo com virada de fuso.
     return inicioDoDia(new Date(comeco.getTime() + 26 * 60 * 60_000));
+}
+
+/** O fim aberto do dia de uma data "AAAA-MM-DD". */
+export function fimDoDiaDe(data: string): Date | null {
+    const comeco = inicioDoDiaDe(data);
+    return comeco === null ? null : fimDoDia(comeco);
+}
+
+/** "2026-09-14" daquele instante, no fuso do salão — o que o seletor de data lê. */
+export function dataDoSeletor(instante: Date = new Date()): string {
+    const { ano, mes, dia } = partesEm(instante);
+    return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
 /** "20:12" no fuso do salão. */

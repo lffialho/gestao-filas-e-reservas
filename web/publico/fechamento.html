@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fechamento do dia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
+    <link rel="stylesheet" href="/estilo.css">
+</head>
+<body class="pagina-fechamento">
+    <header class="cabecalho">
+        <div class="cabecalho__marca">
+            <span class="cabecalho__titulo">FECHAMENTO</span>
+            <span id="rotulo-do-periodo" class="cabecalho__relogio mono"></span>
+        </div>
+        <a href="/" class="botao botao--contorno nao-imprimir">Voltar ao painel</a>
+    </header>
+
+    <section class="periodo nao-imprimir" aria-label="Período">
+        <div class="periodo__botoes">
+            <button type="button" class="botao botao--contorno escolhido" data-periodo="hoje">Hoje</button>
+            <button type="button" class="botao botao--contorno" data-periodo="ontem">Ontem</button>
+            <button type="button" class="botao botao--contorno" data-periodo="intervalo">Intervalo</button>
+        </div>
+
+        <div id="campos-do-intervalo" class="periodo__campos" hidden>
+            <label class="campo" for="de">
+                <span class="rotulo">De</span>
+                <input id="de" type="date" class="campo__entrada">
+            </label>
+            <label class="campo" for="ate">
+                <span class="rotulo">Até</span>
+                <input id="ate" type="date" class="campo__entrada">
+            </label>
+        </div>
+    </section>
+
+    <p id="recado" class="recado nao-imprimir" role="status" hidden></p>
+
+    <main id="conteudo" class="conteudo-do-fechamento"></main>
+
+    <footer class="acoes-do-fechamento nao-imprimir">
+        <button id="csv-resumo" type="button" class="botao botao--contorno">Baixar o resumo (CSV)</button>
+        <button id="csv-diario" type="button" class="botao botao--contorno">Baixar o diário (CSV)</button>
+        <button id="imprimir" type="button" class="botao botao--cheio">Imprimir</button>
+    </footer>
+
+    <script type="module" src="/js/tela-fechamento.js"></script>
+</body>
+</html>

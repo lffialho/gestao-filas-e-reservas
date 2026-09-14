@@ -883,6 +883,26 @@ body {
     border-color: var(--livre);
 }
 
+/* A prévia da decisão, embaixo do formulário de chegada. */
+.previa {
+    margin: 2px 0 0;
+    min-height: 22px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.previa--mesa {
+    color: var(--livre);
+}
+
+.previa--fila {
+    color: var(--chamada);
+}
+
+.previa--recusa {
+    color: var(--ocupada-clara);
+}
+
 /* -------------------------------------------------------------- fechamento */
 
 .fechamento {
@@ -947,6 +967,129 @@ body {
 .fechamento__vazio {
     margin: 0;
     color: var(--apagado);
+}
+
+/* ------------------------------------------------- tela de fechamento do dia */
+
+.pagina-fechamento {
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+.periodo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px 20px;
+}
+
+.periodo__botoes {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* O período escolhido fica evidente: o relatório inteiro depende dele. */
+.periodo .escolhido {
+    border-color: var(--livre);
+    color: var(--livre);
+}
+
+.periodo__campos {
+    display: flex;
+    gap: 12px;
+}
+
+.periodo__campos .campo__entrada {
+    height: 56px;
+}
+
+.recado {
+    margin: 0;
+    padding: 12px 16px;
+    border: 1px solid var(--borda-clara);
+    border-radius: var(--raio);
+    font-size: 15px;
+    color: var(--texto-suave);
+}
+
+.recado--erro {
+    border-color: var(--ocupada);
+    background: rgb(255 92 92 / 10%);
+    color: var(--ocupada-clara);
+}
+
+.recado--aviso {
+    border-color: var(--chamada);
+    background: rgb(255 182 39 / 10%);
+    color: var(--chamada-clara);
+}
+
+.conteudo-do-fechamento {
+    padding: 20px 24px;
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+}
+
+.acoes-do-fechamento {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+/* ------------------------------------------------------------- na impressão */
+
+/*
+ * O painel é escuro porque se lê num salão à noite; papel é branco. Aqui as
+ * cores são invertidas e some tudo que só serve na tela — botões, seletor de
+ * período, o link de volta. O que sobra é o que alguém prenderia no mural.
+ */
+@media print {
+    :root {
+        --fundo: #fff;
+        --painel: #fff;
+        --chao: #fff;
+        --borda: #c8cdd4;
+        --borda-clara: #c8cdd4;
+        --texto: #10161f;
+        --texto-suave: #2a3442;
+        --apagado: #5c6673;
+        --bem-apagado: #8792a0;
+        --livre: #0a7a3f;
+        --chamada: #8a5b00;
+        --ocupada: #b3251f;
+    }
+
+    body {
+        padding: 0;
+        background: #fff;
+        color: #10161f;
+    }
+
+    .nao-imprimir {
+        display: none !important;
+    }
+
+    .conteudo-do-fechamento {
+        padding: 0;
+        border: none;
+    }
+
+    .cabecalho__marca {
+        border-right: none;
+        padding-right: 0;
+    }
+
+    /* Uma tabela partida no meio da página é ilegível; deixe-a inteira. */
+    .fechamento__mesas {
+        break-inside: avoid;
+    }
+
+    .fechamento__linha {
+        break-inside: avoid;
+    }
 }
 
 /* ------------------------------------------------------------ telas menores */

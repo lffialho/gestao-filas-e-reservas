@@ -11,7 +11,6 @@ import { normalizarTermo } from "./busca.js";
 import { formularioDeChegada } from "./chegada.js";
 import { desenharDiario } from "./diario.js";
 import { el, exigir, trocar } from "./dom.js";
-import { desenharFechamento } from "./fechamento.js";
 import { desenharFila } from "./fila.js";
 import { Modal } from "./modal.js";
 import { desenharPlanta } from "./planta.js";
@@ -137,7 +136,6 @@ export class Painel {
         });
 
         exigir("#chegou").addEventListener("click", () => this.#abrirChegada());
-        exigir("#fechar-o-dia").addEventListener("click", () => this.#abrirFechamento());
         document.addEventListener("keydown", (evento) => this.#aoTeclar(evento));
     }
 
@@ -392,12 +390,13 @@ export class Painel {
     }
 
     #abrirChegada(): void {
-        const formulario = formularioDeChegada();
+        const formulario = formularioDeChegada((pessoas, telefone) => api.previa(pessoas, telefone));
 
         this.#modal.abrir({
             titulo: "Chegou alguém",
             nota: "Quem decide entre mesa e fila é o salão, por ordem de chegada.",
             corpo: formulario.corpo,
+            aoFechar: () => formulario.encerrar(),
             acoes: [
                 {
                     rotulo: "Receber",
@@ -412,20 +411,6 @@ export class Painel {
                     }
                 }
             ]
-        });
-    }
-
-    #abrirFechamento(): void {
-        const estado = this.#estado;
-        if (estado === null) {
-            return;
-        }
-
-        this.#modal.abrir({
-            titulo: `Fechamento · ${dataPorExtenso(estado.lidoEm)}`,
-            nota: `Do começo do dia até as ${horaMinuto(estado.lidoEm)}, no fuso do salão.`,
-            corpo: desenharFechamento(estado.resumo),
-            acoes: []
         });
     }
 

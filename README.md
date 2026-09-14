@@ -91,6 +91,7 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 | `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }`. Se alguém na fila couber nela, já nasce reservada |
 | `GET` | `/mesas/:id` | Estado da mesa e quem a ocupa |
 | `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
+| `GET` | `/chegadas/previa` | Onde esse grupo iria parar, sem mudar nada — `?pessoas=N&telefone=<opcional>` |
 | `DELETE` | `/fila/:telefone` | Desistência: sai da fila |
 | `POST` | `/mesas/:id/reserva` | O anfitrião senta alguém numa mesa escolhida a dedo |
 | `DELETE` | `/mesas/:id/reserva` | Cancela a reserva; a mesa vai para o próximo da fila que couber |
@@ -133,6 +134,16 @@ arrastar o dia todo a cada atualização; por isso `total` conta o período, nã
 **O telefone é a identidade.** O mesmo número não pode estar em duas mesas, nem sentado e na
 fila ao mesmo tempo — é por ele que se desiste da fila e é para ele que o aviso de mesa
 pronta vai.
+
+`GET /chegadas/previa?pessoas=…` responde **o que aconteceria** se esse grupo chegasse agora:
+`{ destino: "mesa" | "fila" | "recusa", mesa, posicao, motivo }`. É leitura pura — nada muda
+no salão — e chama exatamente o mesmo cálculo que `POST /chegadas` faria, inclusive a regra
+de que uma mesa livre não serve se alguém que já espera também caberia nela. Existe para o
+painel poder mostrar o destino a quem ainda está digitando **sem uma segunda cópia da regra
+na tela**: duas cópias divergem, e a tela passaria a prometer mesa que o salão não daria. Na
+recusa, `motivo` é o mesmo `tipo` do erro que a chegada de verdade lançaria; o texto a
+mostrar é escolhido por quem apresenta. O telefone é opcional — sem ele a resposta considera
+só o tamanho do grupo.
 
 ```bash
 curl -X POST localhost:3000/chegadas \
@@ -196,12 +207,20 @@ web/
     fila.ts      a tira da fila
     diario.ts    fato do diário → frase
     fechamento.ts  os números do dia
-    chegada.ts   o formulário de quem chegou
+    chegada.ts   o formulário de quem chegou, com a prévia
+    csv.ts       CSV que abre no Excel em português
     modal.ts     a janela de ação
     dom.ts       montagem de DOM sem innerHTML
-    painel.ts    estado, atualização e regiões
-  publico/     index.html, estilo.css e o JavaScript gerado
+    painel.ts    estado, atualização e regiões — entra por app.ts
+    tela-fechamento.ts  a tela do fechamento — entra por fechamento.html
+  publico/     index.html, fechamento.html, estilo.css e o JavaScript gerado
 ```
+
+Duas páginas, dois pontos de entrada, um CSS. `tempo.ts` e `csv.ts` têm teste — rodam sob
+`node --test` como o resto da suíte, porque não tocam em DOM nenhum: é aritmética de fuso e
+escape de texto, e isso se testa sem navegador. Os testes ficam fora do que vai para
+`publico/js/` (o `exclude` do `tsconfig.navegador.json`) e são verificados pelo
+`tsconfig.testes.json`, que é o único a lhes dar os tipos do node.
 
 Sem bundler e sem dependência: o `tsc` que já está aqui compila os dois lados, e o navegador
 carrega os módulos nativamente. `web/dist/` e `web/publico/js/` são gerados e ficam fora do
@@ -221,6 +240,33 @@ Clicar numa mesa abre o que dá para fazer com ela: *sentou*, *devolver para a f
 a mesa*. O que tira a mesa de alguém pede um segundo toque. Clicar em quem espera oferece
 tirá-lo da fila. A resposta do serviço vira frase — "Mesa 3 liberada e chamada para Ana" —
 em vez de mandar conferir na tela.
+
+Em **Chegou alguém**, enquanto se digita, uma linha diz onde o grupo vai parar: "Senta na
+mesa 3", "Entra na fila, na posição 2", "Este telefone já está na mesa 3". Essa resposta vem
+de `GET /chegadas/previa`, não de um cálculo aqui — a razão está na seção da API. O botão
+continua valendo mesmo quando a prévia recusa: a prévia é um retrato de alguns segundos
+atrás, e quem decide de verdade é o serviço, no momento do envio.
+
+### Fechar o dia
+
+`/fechamento.html` é tela própria, e não janela sobre o painel, porque é feita para imprimir
+e para exportar — página inteira se imprime com CSS normal, enquanto uma janela exigiria
+esconder o resto da tela na impressão, regra que quebra ao primeiro elemento novo. Na
+impressão as cores se invertem (o painel é escuro porque o salão é escuro; papel é branco) e
+some tudo que só serve na tela.
+
+O período é **hoje**, **ontem** ou um **intervalo** de datas. Como os números saem do diário,
+e não do estado do salão, pedir ontem funciona e o relatório sobrevive a um reinício do
+serviço no meio do expediente.
+
+Dois arquivos saem em CSV, com `;` e BOM porque é o que abre certo no Excel em português (a
+razão está em `csv.ts`):
+
+- **o resumo** — os indicadores do período e a tabela por mesa, duas tabelas separadas por
+  uma linha em branco no mesmo arquivo, que é como se olha a noite inteira de uma vez;
+- **o diário** — um evento por linha, com o momento em ISO e a hora legível ao lado.
+  **Sem telefone**: este arquivo sai do salão, e o relatório do dia não precisa levar junto
+  uma lista de contatos de clientes para ser útil.
 
 **A mesa chamada tem prazo.** `RESERVADA` já significa "chamada, ainda não sentou", e o
 `desde` diz desde quando; o painel conta cinco minutos a partir daí e, quando estouram,
@@ -381,5 +427,10 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
 - **O painel não cadastra nem arrasta mesas.** A planta desenha a posição que o serviço
   guarda, e `POST /mesas` e `POST /mesas/:id/posicao` continuam sendo trabalho de quem monta
   o salão pela API.
-- **O fechamento do dia é o resumo em tela.** Não há escolha de período, exportação nem
-  impressão; o período é sempre do começo do dia até agora.
+- **O CSV do diário para em 500 eventos**, que é o teto de `/eventos`. Um dia cabe com folga;
+  um intervalo longo não, e a tela avisa quantos ficaram de fora em vez de entregar um
+  arquivo cortado em silêncio. Exportar período grande pede paginação, que não existe.
+- **A prévia da chegada é um retrato**, não uma reserva. Entre ver "senta na mesa 3" e
+  apertar o botão, a mesa pode ter ido para outro grupo — e aí quem recusa é o serviço, com
+  o erro de sempre. É o comportamento certo, mas convém saber que a linha verde não promete
+  nada.

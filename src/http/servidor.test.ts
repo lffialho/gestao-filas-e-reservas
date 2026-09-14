@@ -542,6 +542,40 @@ describe("API HTTP", () => {
         });
     });
 
+    describe("prévia da recepção", () => {
+        const api = comApiPropria();
+
+        it("diz a mesa sem ocupar nada", async () => {
+            const previa = await api().pedir("GET", "/chegadas/previa?pessoas=2");
+            assert.equal(previa.status, 200);
+            assert.equal(previa.json.destino, "mesa");
+            assert.equal(previa.json.mesa.capacidade, 2);
+
+            const salao = await api().pedir("GET", "/salao");
+            assert.equal(salao.json.taxaOcupacaoPercentual, 0, "perguntar não ocupa");
+        });
+
+        it("considera o telefone quando ele vem", async () => {
+            await api().pedir("POST", "/chegadas", { nome: "Ana", pessoas: 2, telefone: "+5511999" });
+
+            const previa = await api().pedir(
+                "GET",
+                `/chegadas/previa?pessoas=2&telefone=${encodeURIComponent("+5511999")}`
+            );
+
+            assert.equal(previa.json.destino, "recusa");
+            assert.equal(previa.json.motivo, "ClienteJaNoSalao");
+            assert.equal(previa.json.mesa.id, "m1");
+        });
+
+        it("400 quando pessoas falta ou não é inteiro positivo", async () => {
+            for (const consulta of ["", "?pessoas=", "?pessoas=0", "?pessoas=2,5", "?pessoas=muitos"]) {
+                const { status } = await api().pedir("GET", `/chegadas/previa${consulta}`);
+                assert.equal(status, 400, `"${consulta}" deveria ser recusado`);
+            }
+        });
+    });
+
     describe("diário de eventos", () => {
         const api = comApiPropria();
         const tudo = "de=1970-01-01T00:00:00.000Z&ate=2100-01-01T00:00:00.000Z";

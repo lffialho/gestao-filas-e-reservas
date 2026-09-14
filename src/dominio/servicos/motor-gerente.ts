@@ -4,6 +4,7 @@ import type { Mesa } from "../entidades/mesa.js";
 import type { Posicao } from "../entidades/planta.js";
 import type {
     InfoMesa,
+    Previsao,
     RelatorioDoSalao,
     ResultadoCadastroDeMesa,
     ResultadoLiberacao,
@@ -24,6 +25,7 @@ export type { ResumoDoPeriodo, ResumoPorMesa } from "./resumo.js";
 export type {
     InfoCliente,
     InfoMesa,
+    Previsao,
     RelatorioDoSalao,
     ResultadoCadastroDeMesa,
     ResultadoLiberacao,
@@ -146,6 +148,15 @@ export class MotorGerente {
      */
     async eventos(periodo: Periodo): Promise<EventoDoSalao[]> {
         return this.#repositorio.eventos(periodo);
+    }
+
+    /**
+     * Onde este grupo iria parar, sem mudar nada. Vai por `consulta`, e não por
+     * `transacao`: perguntar não pode tomar a trava de escrita do banco, senão
+     * um painel digitando um nome atrapalharia quem está sentando gente.
+     */
+    async preverRecepcao(pessoas: number, telefone: string | null): Promise<Previsao> {
+        return this.#repositorio.consulta((salao) => salao.preverRecepcao(pessoas, telefone));
     }
 
     /** Recebe quem chegou: senta na melhor mesa livre ou põe na fila. */
