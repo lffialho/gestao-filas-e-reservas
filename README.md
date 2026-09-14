@@ -100,12 +100,24 @@ Copy-Item .env.example .env     # preencha SALAO_TOKEN e SALAO_BANCO
 powershell -ExecutionPolicy Bypass -File ferramentas\instalar-windows.ps1
 ```
 
+**Rode num PowerShell como administrador.** Tarefas na raiz do Agendador exigem elevação para
+serem criadas ou trocadas, e sem isso o script para na hora de registrar.
+
 O script confere o que precisa estar pronto — Node 22 ou mais novo, os dois builds, o `.env`
 com token — e só então registra duas tarefas no Agendador do Windows, uma para o serviço e
-outra para o painel, que sobem ao entrar na conta e reiniciam sozinhas se o processo morrer.
-Quem supervisiona é o próprio Windows, e não um script nosso: se ninguém estiver olhando, é
-o agendador que precisa levantar o serviço, e ele continua de pé mesmo que tudo o que
-escrevemos morra. Rodar de novo atualiza em vez de duplicar.
+outra para o painel. Quem supervisiona é o próprio Windows, e não um script nosso: se ninguém
+estiver olhando, é o agendador que precisa levantar o serviço, e ele continua de pé mesmo que
+tudo o que escrevemos morra. Rodar de novo atualiza em vez de duplicar.
+
+Cada tarefa tem **dois gatilhos**, e a diferença importa. O primeiro sobe o salão ao entrar na
+conta. O segundo repete a cada dois minutos, para sempre, e é o que garante que ele volte.
+
+A razão é medida, não teórica: com só o reinício-em-falha do Agendador (`RestartCount`), matar
+o processo do serviço deixou a tarefa parada em "Ready" e **o salão ficou fora do ar por 150
+segundos sem nenhuma tentativa de subir** — até ser levantado à mão. Reinício-em-falha cobre a
+tarefa que falha, não o processo que some. O gatilho de repetição cobre os dois: com
+`MultipleInstances = IgnoreNew` ele não faz nada enquanto o serviço está de pé, e o levanta em
+no máximo dois minutos morra como morrer.
 
 `ferramentas\desinstalar-windows.ps1` tira as tarefas e **não toca no banco nem nas cópias**
 — desinstalar não pode ser o comando que apaga o histórico do restaurante.
@@ -542,18 +554,16 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`
   nem matam. A cópia periódica cobre o buraco; a mais recente pode ser de até seis horas
   atrás.
-- **Da restauração, falta executar a troca com o serviço de pé.** Num Windows 11 real já foram
-  exercitados: escolher a cópia, recusar cópia corrompida sem tocar no banco, guardar o banco
-  anterior com `-wal` e `-shm` junto, conferir o arquivo restaurado, e — contra uma instalação
-  no ar, em `-Ensaio` — reconhecer que o alvo é o banco do serviço e planejar parar e subir as
-  tarefas. O que nunca rodou de verdade é esse trecho final: parar, esperar o arquivo ser
-  solto, trocar e subir.
-- **Do script de instalação do Windows, só as conferências foram executadas de verdade.**
-  Num Windows 11 real: caminhos, detecção do Node e as cinco recusas (sem build, build pela
-  metade, sem `.env`, `.env` sem `SALAO_TOKEN`, token vazio) param com a mensagem certa. O
-  registro das tarefas em si nunca rodou — foi substituído por dublês, porque mexe no
-  Agendador da máquina. Ele é idempotente, mas a primeira execução de verdade ainda é a
-  primeira.
+- **O gatilho de repetição ainda não foi visto ressuscitando o serviço.** O que foi medido é o
+  problema que ele resolve — sem ele, o serviço morto ficou 150 s fora do ar sem nenhuma
+  tentativa de subir. A configuração nova registra sem erro, mas a prova de que o salão volta
+  sozinho pede uma máquina onde dê para registrar a tarefa e depois matar o processo: rode o
+  instalador elevado, mate o `node` do serviço e confira que em até dois minutos
+  `http://localhost:3000/saude` responde de novo.
+- **A duração da repetição não pode ser um `TimeSpan` enorme.** `[TimeSpan]::MaxValue` cria o
+  gatilho sem reclamar e o Agendador **recusa o registro** com "valor fora do intervalo".
+  Duração vazia é como ele escreve "para sempre". Fica anotado porque o erro só aparece no
+  registro, e o script desregistra a tarefa antes de registrar a nova.
 - **Só Windows.** Não há equivalente para Linux ou macOS; num Linux, `systemd --user` faria o
   mesmo papel.
 - **O CSV do diário para em 500 eventos**, que é o teto de `/eventos`. Um dia cabe com folga;

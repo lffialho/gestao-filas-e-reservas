@@ -20,6 +20,16 @@
 
 $ErrorActionPreference = "Stop"
 
+function Parar {
+    param([string] $Mensagem)
+
+    # `throw` imprimiria a linha do script e uma fileira de tis debaixo dela.
+    # Quem está instalando precisa da frase, não do código que a produziu.
+    Write-Host ""
+    Write-Host $Mensagem -ForegroundColor Red
+    exit 1
+}
+
 $raiz = Split-Path -Parent $PSScriptRoot
 $env_ = Join-Path $raiz ".env"
 $servico = Join-Path $raiz "dist\main.js"
@@ -33,30 +43,43 @@ Write-Host "Salão em: $raiz"
 
 $node = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $node) {
-    throw "Não achei o node no PATH. Instale o Node.js 22 ou mais novo e rode de novo."
+    Parar "Não achei o node no PATH. Instale o Node.js 22 ou mais novo e rode de novo."
 }
 $versao = (& $node --version).TrimStart("v").Split(".")[0]
 if ([int]$versao -lt 22) {
-    throw "Node $versao é antigo demais; o projeto usa node:sqlite, que pede a versão 22 ou mais nova."
+    Parar "Node $versao é antigo demais; o projeto usa node:sqlite, que pede a versão 22 ou mais nova."
 }
 Write-Host "Node: $node (v$versao)"
 
 foreach ($arquivo in @($servico, $painel)) {
     if (-not (Test-Path $arquivo)) {
-        throw "Não achei $arquivo. Rode 'npm run build' e 'npm run web:build' antes."
+        Parar "Não achei $arquivo. Rode 'npm run build' e 'npm run web:build' antes."
     }
 }
 
 if (-not (Test-Path $env_)) {
-    throw "Não achei o .env em $raiz. Copie o .env.example, preencha o SALAO_TOKEN e rode de novo."
+    Parar "Não achei o .env em $raiz. Copie o .env.example, preencha o SALAO_TOKEN e rode de novo."
 }
 if (-not (Select-String -Path $env_ -Pattern '^\s*SALAO_TOKEN\s*=\s*\S' -Quiet)) {
-    throw "O .env não tem SALAO_TOKEN preenchido. Sem token o serviço se recusa a subir, e é para se recusar mesmo."
+    Parar "O .env não tem SALAO_TOKEN preenchido. Sem token o serviço se recusa a subir, e é para se recusar mesmo."
 }
 
 # ------------------------------------------------------------------- tarefas
-# RestartCount alto e intervalo de 1 minuto: queremos que ele insista a noite
-# inteira, não que desista depois de três tentativas.
+# Dois gatilhos, e não um.
+#
+# `-AtLogOn` sobe o salão ao entrar na conta. `RestartCount` cobre o processo que
+# *falha*. Mas já vimos aqui um caso que escapa aos dois: o node encerrado por
+# evento de console (saída 0xC000013A) deixou a tarefa em "Ready", sem falha para
+# reiniciar, e o serviço ficou fora do ar sem ninguém perceber. Numa casa que abre
+# todo dia, "não percebi" é o mesmo que "não funciona".
+#
+# Por isso o segundo gatilho: uma repetição a cada dois minutos, para sempre.
+# Junto com `-MultipleInstances IgnoreNew`, ele não faz nada enquanto o serviço
+# está de pé, e o levanta em no máximo dois minutos morra como morrer. É o
+# agendador do Windows vigiando, que é o que continua existindo depois que todo
+# processo nosso morreu.
+
+$REPETICAO_EM_MINUTOS = 2
 
 function Instalar-Tarefa {
     param(
@@ -70,12 +93,23 @@ function Instalar-Tarefa {
         -Argument "--env-file=`"$env_`" `"$Script`"" `
         -WorkingDirectory $raiz
 
-    $gatilho = New-ScheduledTaskTrigger -AtLogOn
+    $gatilhos = @(
+        (New-ScheduledTaskTrigger -AtLogOn),
+        # Sem `-RepetitionDuration`: duração vazia é como o Agendador escreve
+        # "para sempre". Passar um TimeSpan enorme parece a mesma coisa e não é —
+        # o registro é recusado com "valor fora do intervalo", e a tarefa não
+        # chega a existir.
+        (New-ScheduledTaskTrigger `
+                -Once `
+                -At (Get-Date).Date `
+                -RepetitionInterval (New-TimeSpan -Minutes $REPETICAO_EM_MINUTOS))
+    )
 
     $ajustes = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
         -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
         -RestartCount 999 `
         -RestartInterval (New-TimeSpan -Minutes 1) `
         -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
@@ -87,7 +121,7 @@ function Instalar-Tarefa {
         -TaskName $Nome `
         -Description $Descricao `
         -Action $acao `
-        -Trigger $gatilho `
+        -Trigger $gatilhos `
         -Settings $ajustes `
         -RunLevel Limited | Out-Null
 
