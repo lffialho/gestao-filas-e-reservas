@@ -130,8 +130,35 @@ encerramento não chega a rodar. Quem garante é a cópia periódica. Na prátic
 recente pode ser de até seis horas atrás, e é por isso que o intervalo é a variável que
 vale a pena mexer (`SALAO_BACKUP_HORAS`) numa casa de movimento.
 
-Para restaurar: pare o serviço, troque o arquivo do banco pela cópia escolhida (o nome traz
-a data e a hora em UTC), suba de novo.
+### Restaurar
+
+Backup que nunca foi restaurado não é backup: é um arquivo que se espera que sirva. Por isso
+restaurar é um script, e não um parágrafo de instruções para seguir na pior noite possível.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ferramentas\restaurar-windows.ps1 -Ensaio
+```
+
+`-Ensaio` mostra o que ele faria e não altera nada — rode assim uma vez, hoje, para saber que
+funciona. Sem `-Ensaio`, ele lista as cópias (a mais nova primeiro), pergunta qual, e então:
+
+1. **confere a cópia antes de tocar no banco atual** — nunca se troca um banco que funciona
+   por uma cópia que não abre;
+2. para as tarefas do Windows e espera o arquivo ser solto, porque aqui o arquivo fica preso
+   enquanto o processo o tiver aberto;
+3. **guarda o banco atual, nunca apaga** — junto com o `-wal` e o `-shm`, numa pasta com a
+   data. Restaurar a cópia errada é um engano possível, e não pode ser um engano definitivo;
+4. copia, confere de novo o arquivo que ficou no lugar, e sobe o serviço.
+
+Para conferir uma cópia sem restaurar nada — vale a pena de vez em quando:
+
+```bash
+node ferramentas/conferir-copia.mjs backups/salao-2026-09-14T19-11-37-984Z.db
+```
+
+Ele abre só para leitura, roda `integrity_check` no banco inteiro, exige as tabelas do salão e
+mostra quantas mesas, quantos na fila e quantos eventos há ali — porque a cópia de um salão
+vazio abre perfeitamente, e é o engano caro de não perceber na hora de restaurar.
 
 ## API
 
@@ -515,6 +542,12 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`
   nem matam. A cópia periódica cobre o buraco; a mais recente pode ser de até seis horas
   atrás.
+- **Da restauração, falta ensaiar o caso em que o banco é o do serviço instalado.** O que foi
+  exercitado num Windows 11 real: escolher a cópia, recusar cópia corrompida sem tocar no
+  banco, guardar o banco anterior com `-wal` e `-shm` junto, e conferir o arquivo restaurado.
+  O trecho que para as tarefas, espera o arquivo ser solto e as sobe de novo só roda quando o
+  alvo é o banco do `.env` — e esse caminho ainda não foi executado contra uma instalação de
+  pé. Rodar com `-Ensaio` na máquina do balcão fecha essa lacuna.
 - **Do script de instalação do Windows, só as conferências foram executadas de verdade.**
   Num Windows 11 real: caminhos, detecção do Node e as cinco recusas (sem build, build pela
   metade, sem `.env`, `.env` sem `SALAO_TOKEN`, token vazio) param com a mensagem certa. O
