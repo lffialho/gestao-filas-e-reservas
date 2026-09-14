@@ -45,12 +45,12 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 312 testes |
+| `npm test` | 332 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
-| `npm run conferir:instalacao` | Confere uma **instalação no ar**, de fora — 57 verificações |
+| `npm run conferir:instalacao` | Confere uma **instalação no ar**, de fora — 59 verificações |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
 | `npm run web:build` | Compila o painel: servidor para `web/dist/`, navegador para `web/publico/js/` |
 | `npm run web:env` | Sobe o painel lendo o `.env` |
@@ -69,7 +69,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_BACKUP_COPIAS` | `28` | Quantas cópias guardar — 28 × 6 h ≈ uma semana |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
-| `PAINEL_SENHA` | — | Senha do painel. Sem ela o painel se recusa a subir |
+| `PAINEL_SENHA_ARQUIVO` | `painel-senha.json` na raiz | Onde a senha do painel fica guardada, como hash |
 | `PAINEL_SEM_SENHA` | — | `1` abre o painel a quem alcançar a porta. Só para desenvolvimento |
 
 A porta do serviço aparece em duas variáveis — `PORTA`, para ele, e `SALAO_API`, para o
@@ -142,6 +142,9 @@ Vale repetir esse teste depois de instalar, em cada casa: mate o `node` do servi
 que `http://localhost:3000/saude` volta a responder em até dois minutos. É o teste que separa
 "deve voltar sozinho" de "volta sozinho".
 
+Terminada a instalação, abra `http://localhost:5173` e **crie a senha do painel** — é a
+primeira tela. A mesma senha vale no tablet do balcão.
+
 `ferramentas\desinstalar-windows.ps1` tira as tarefas e **não toca no banco nem nas cópias**
 — desinstalar não pode ser o comando que apaga o histórico do restaurante.
 
@@ -154,7 +157,7 @@ SQLite de verdade, painel de verdade, os dois processos no ar.
 npm run conferir:instalacao -- --pode-escrever
 ```
 
-São 57 verificações — autenticação, ordem de chegada, a fila ganhando de mesa vazia, os códigos
+São 59 verificações — autenticação, ordem de chegada, a fila ganhando de mesa vazia, os códigos
 de erro, o diário, e a senha do painel com cookie forjado e tudo. Rode depois de instalar numa
 casa nova, antes de entregar a chave, e quando alguém ligar dizendo que "não funciona": ele
 diz em qual das 57 parou.
@@ -346,66 +349,51 @@ o painel escuta na rede de propósito, que é como o tablet do balcão o abre. S
 qualquer um no wifi do restaurante abre `http://<ip-do-balcão>:5173` e senta gente, libera
 mesa, tira mesa da planta e fecha o dia.
 
-Daí `PAINEL_SENHA`, que é segredo de papel diferente do token: o token é o que o painel usa
-para falar com o serviço; a senha é o que uma pessoa usa para falar com o painel. **O painel
-se recusa a subir sem ela** — em desenvolvimento, `PAINEL_SEM_SENHA=1` abre, e a linha de
-subida diz em voz alta que está aberto.
+Daí uma senha própria do painel, de papel diferente do token: o token é o que o painel usa
+para falar com o serviço; a senha é o que uma pessoa usa para falar com o painel.
 
-Pedida uma vez a cada 12 horas, que é um turno. A sessão é um cookie `HttpOnly`,
-`SameSite=Strict`, assinado com HMAC-SHA256 por uma chave **derivada da própria senha** — o
-que tem duas consequências boas: não há mais um segredo para configurar em cada casa, e a
-sessão sobrevive ao painel reiniciar, então ninguém é deslogado quando o Agendador levanta o
-processo no meio do sábado. Trocar a senha invalida as sessões abertas, que é o que se espera
-ao trocar uma senha. `/sair` encerra a sessão.
+**Quem a cria é quem opera, na primeira vez que o painel abre.** Não há senha em arquivo de
+configuração, e não há senha padrão — senha padrão em produto vendido é a mesma senha em
+todas as casas. Enquanto ela não existe, o painel inteiro é a tela de criá-la: qualquer
+caminho leva a `/criar-senha`, e nem o CSS sai. Criada a senha, esse caminho se fecha — senão
+seria uma porta para trocar a senha de quem já tem uma, sem saber a antiga.
+
+A mesma senha vale no computador do balcão e no tablet; cada aparelho guarda a própria sessão.
+
+| Caminho | O que faz |
+| --- | --- |
+| `/criar-senha` | Primeira abertura. Some depois que a senha existe |
+| `/entrar` | Pede a senha, uma vez a cada 12 h |
+| `/trocar-senha` | Exige a senha atual, mesmo de quem já está logado |
+| `/sair` | Encerra a sessão deste aparelho |
+
+**Guardamos o hash, nunca a senha**, em `painel-senha.json` (fora do git). Sai por `scrypt`,
+que vem no Node e é feito para senha: caro de propósito, para que quem levar o arquivo não
+teste milhões de palpites por segundo. SHA-256 puro seria rápido demais, e é o engano comum.
+Quem abrir um backup sincronizado para a nuvem não fica sabendo a senha — o que importa além
+daqui, porque quase todo mundo repete senha entre sistemas.
+
+**Esqueceu a senha?** Apague `painel-senha.json` e o painel pede uma nova na próxima abertura.
+Não é fraqueza: quem alcança o disco já alcança o banco do restaurante inteiro.
+
+A sessão é um cookie `HttpOnly`, `SameSite=Strict`, assinado com HMAC-SHA256 por uma chave
+derivada do **hash** da senha — o servidor só vê a senha no instante em que alguém a digita.
+Daí duas consequências boas: a sessão sobrevive ao painel reiniciar, então ninguém é
+deslogado quando o Agendador levanta o processo no meio do sábado; e **trocar a senha derruba
+todas as sessões abertas**, que é o que se espera ao trocar uma senha.
 
 Enquanto não autenticado, **nada de `publico/` é servido** — nem o CSS, nem o JS: tudo
-redireciona para `/entrar`, e `/api/...` responde `401` em JSON, para o painel saber pedir a
-senha em vez de mostrar "erro desconhecido". A tela de entrada é HTML autocontido, sem
-depender de nenhum arquivo protegido.
+redireciona, e `/api/...` responde `401` em JSON, para o painel saber pedir a senha em vez de
+mostrar "erro desconhecido". As telas de senha são HTML autocontido, sem depender de nenhum
+arquivo protegido.
 
-Uma senha errada custa 400 ms e sai no log. Não é proteção contra força bruta de verdade —
-para isso a senha precisa ser boa. **Uma senha por instalação**, e nunca a mesma em todas as
-casas:
-
-```bash
-node -e "console.log(require('node:crypto').randomBytes(9).toString('base64url'))"
-```
+Senha errada custa 400 ms e sai no log. Não é proteção contra força bruta de verdade — para
+isso a senha precisa ser boa, e o mínimo aqui é de 8 caracteres.
 
 O cookie não é `Secure`, porque o painel roda em `http://` na rede local e um cookie `Secure`
 simplesmente não seria mandado. Consequência: quem consegue ler o tráfego daquela rede lê o
 cookie. Numa rede de balcão é aceitável; numa rede compartilhada com os clientes, o certo é
 separar a rede — não é problema que senha nenhuma resolva.
-
-```
-web/
-  servidor/    node:http — estáticos e repasse autenticado
-  navegador/   TypeScript do painel, compilado para publico/js/
-    api.ts       cliente da API, com os tipos do que viaja no fio
-    tempo.ts     o fuso do restaurante e os formatos de hora
-    relogios.ts  o tique de um segundo que reescreve as contagens
-    planta.ts    a planta: vãos, lugares e colisões
-    fila.ts      a tira da fila
-    diario.ts    fato do diário → frase
-    fechamento.ts  os números do dia
-    chegada.ts   o formulário de quem chegou, com a prévia
-    csv.ts       CSV que abre no Excel em português
-    modal.ts     a janela de ação
-    dom.ts       montagem de DOM sem innerHTML
-    painel.ts    estado, atualização e regiões — entra por app.ts
-    tela-fechamento.ts  a tela do fechamento — entra por fechamento.html
-  publico/     index.html, fechamento.html, estilo.css e o JavaScript gerado
-```
-
-Duas páginas, dois pontos de entrada, um CSS. `tempo.ts` e `csv.ts` têm teste — rodam sob
-`node --test` como o resto da suíte, porque não tocam em DOM nenhum: é aritmética de fuso e
-escape de texto, e isso se testa sem navegador. Os testes ficam fora do que vai para
-`publico/js/` (o `exclude` do `tsconfig.navegador.json`) e são verificados pelo
-`tsconfig.testes.json`, que é o único a lhes dar os tipos do node.
-
-Sem bundler e sem dependência: o `tsc` que já está aqui compila os dois lados, e o navegador
-carrega os módulos nativamente. `web/dist/` e `web/publico/js/` são gerados e ficam fora do
-git. A única coisa que vem de fora são as fontes (Google Fonts); sem internet o painel cai
-nas fontes do sistema e continua inteiro.
 
 ### O que está na tela
 

@@ -10,14 +10,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  *
  * Daí uma senha própria do painel, separada do token da API. São segredos de
  * papéis diferentes: o token é o que o painel usa para falar com o serviço; a
- * senha é o que uma pessoa usa para falar com o painel.
+ * senha é o que uma pessoa usa para falar com o painel. Quem a cria é quem
+ * opera, na primeira abertura — ver `credencial.ts`.
  *
- * A chave que assina a sessão **sai da própria senha**, e não de um segredo
- * sorteado ao subir. Dois motivos: não há mais uma variável para configurar em
- * cada casa, e a sessão sobrevive ao processo reiniciar — o que importa aqui,
- * porque o Agendador levanta o painel de novo a cada pane, e ninguém quer ser
- * deslogado no meio do serviço de sábado. Trocar a senha invalida as sessões
- * abertas, que é exatamente o que se espera ao trocar uma senha.
+ * Aqui só se lida com a chave de assinatura, nunca com a senha: o servidor a vê
+ * apenas no instante em que alguém a digita.
  */
 
 export const NOME_DO_COOKIE = "painel_sessao";
@@ -25,17 +22,8 @@ export const NOME_DO_COOKIE = "painel_sessao";
 /** Um turno. Longo o bastante para o serviço inteiro sem pedir senha de novo. */
 export const DURACAO_EM_HORAS = 12;
 
-/**
- * A chave de assinatura, derivada da senha. O prefixo separa este uso de
- * qualquer outro que a senha venha a ter: a mesma senha em contextos diferentes
- * não pode gerar a mesma chave.
- */
-function chaveDe(senha: string): Buffer {
-    return createHmac("sha256", "painel-sessao-v1").update(senha, "utf8").digest();
-}
-
-function assinar(dados: string, senha: string): string {
-    return createHmac("sha256", chaveDe(senha)).update(dados, "utf8").digest("base64url");
+function assinar(dados: string, chave: Buffer): string {
+    return createHmac("sha256", chave).update(dados, "utf8").digest("base64url");
 }
 
 /** Comparação em tempo constante: `===` vazaria o prefixo correto pelo tempo. */
@@ -55,13 +43,13 @@ export function iguaisEmTempoConstante(a: string, b: string): boolean {
  * — não há o que guardar sobre quem entrou, porque só existe uma senha e uma
  * equipe. O que o cookie prova é "alguém sabia a senha até tal hora".
  */
-export function criarSessao(senha: string, agora: Date = new Date()): string {
+export function criarSessao(chave: Buffer, agora: Date = new Date()): string {
     const expiraEm = agora.getTime() + DURACAO_EM_HORAS * 60 * 60 * 1000;
     const dados = String(expiraEm);
-    return `${dados}.${assinar(dados, senha)}`;
+    return `${dados}.${assinar(dados, chave)}`;
 }
 
-export function sessaoValida(valor: string | null, senha: string, agora: Date = new Date()): boolean {
+export function sessaoValida(valor: string | null, chave: Buffer, agora: Date = new Date()): boolean {
     if (valor === null) {
         return false;
     }
@@ -78,7 +66,7 @@ export function sessaoValida(valor: string | null, senha: string, agora: Date = 
 
     // A assinatura é conferida antes do prazo, de propósito: um valor que não
     // assinamos não merece ter seu conteúdo interpretado.
-    if (!iguaisEmTempoConstante(assinatura, assinar(dados, senha))) {
+    if (!iguaisEmTempoConstante(assinatura, assinar(dados, chave))) {
         return false;
     }
 

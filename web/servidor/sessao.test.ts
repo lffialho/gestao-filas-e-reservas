@@ -11,54 +11,59 @@ import {
     sessaoValida
 } from "./sessao.js";
 
-const SENHA = "senha-do-balcao";
+// A sessão não conhece senha: recebe a chave já derivada. Chaves fixas aqui
+// deixam o teste independente de como a credencial as deriva.
+const CHAVE = Buffer.from("chave-de-um-salao-para-teste-123".padEnd(32, "."));
+const OUTRA_CHAVE = Buffer.from("chave-de-outro-salao-diferente-x".padEnd(32, "."));
 const AGORA = new Date("2026-09-14T20:00:00.000Z");
 const depois = (horas: number) => new Date(AGORA.getTime() + horas * 60 * 60 * 1000);
 
 describe("sessão do painel", () => {
     it("aceita a sessão que ela mesma criou", () => {
-        assert.equal(sessaoValida(criarSessao(SENHA, AGORA), SENHA, AGORA), true);
+        assert.equal(sessaoValida(criarSessao(CHAVE, AGORA), CHAVE, AGORA), true);
     });
 
     it("recusa quando não há cookie nenhum", () => {
-        assert.equal(sessaoValida(null, SENHA, AGORA), false);
+        assert.equal(sessaoValida(null, CHAVE, AGORA), false);
     });
 
     it("recusa lixo que não tem a forma de uma sessão", () => {
         for (const valor of ["", ".", "sem-ponto", ".sóassinatura", "1780000000000."]) {
-            assert.equal(sessaoValida(valor, SENHA, AGORA), false, `aceitou "${valor}"`);
+            assert.equal(sessaoValida(valor, CHAVE, AGORA), false, `aceitou "${valor}"`);
         }
     });
 
-    it("recusa a sessão de outra senha", () => {
-        const deOutro = criarSessao("outra-senha", AGORA);
-        assert.equal(sessaoValida(deOutro, SENHA, AGORA), false);
+    it("recusa a sessão assinada por outra chave", () => {
+        const deOutro = criarSessao(OUTRA_CHAVE, AGORA);
+        assert.equal(sessaoValida(deOutro, CHAVE, AGORA), false);
     });
 
     it("trocar a senha invalida as sessões abertas", () => {
-        const antes = criarSessao(SENHA, AGORA);
-        assert.equal(sessaoValida(antes, "senha-nova", AGORA), false);
+        // Trocar a senha troca o hash, que troca a chave: o cookie de antes
+        // deixa de valer, que é o que se espera ao trocar uma senha.
+        const antes = criarSessao(CHAVE, AGORA);
+        assert.equal(sessaoValida(antes, OUTRA_CHAVE, AGORA), false);
     });
 
     it("recusa prazo esticado sem assinatura nova", () => {
         // O ataque óbvio: pegar o cookie e aumentar o número antes do ponto.
-        const valida = criarSessao(SENHA, AGORA);
+        const valida = criarSessao(CHAVE, AGORA);
         const assinatura = valida.slice(valida.indexOf(".") + 1);
         const esticada = `${AGORA.getTime() + 10 * 365 * 24 * 60 * 60 * 1000}.${assinatura}`;
-        assert.equal(sessaoValida(esticada, SENHA, AGORA), false);
+        assert.equal(sessaoValida(esticada, CHAVE, AGORA), false);
     });
 
     it("vale durante o turno e caduca depois", () => {
-        const sessao = criarSessao(SENHA, AGORA);
-        assert.equal(sessaoValida(sessao, SENHA, depois(DURACAO_EM_HORAS - 1)), true);
-        assert.equal(sessaoValida(sessao, SENHA, depois(DURACAO_EM_HORAS + 1)), false);
+        const sessao = criarSessao(CHAVE, AGORA);
+        assert.equal(sessaoValida(sessao, CHAVE, depois(DURACAO_EM_HORAS - 1)), true);
+        assert.equal(sessaoValida(sessao, CHAVE, depois(DURACAO_EM_HORAS + 1)), false);
     });
 
     it("sobrevive ao painel reiniciar", () => {
-        // A chave sai da senha, não de um segredo sorteado ao subir: quem estava
+        // A chave sai do hash da senha, não de um segredo sorteado: quem estava
         // logado continua logado depois de o Agendador levantar o painel de novo.
-        const antesDaQueda = criarSessao(SENHA, AGORA);
-        assert.equal(sessaoValida(antesDaQueda, SENHA, depois(1)), true);
+        const antesDaQueda = criarSessao(CHAVE, AGORA);
+        assert.equal(sessaoValida(antesDaQueda, CHAVE, depois(1)), true);
     });
 });
 
@@ -85,7 +90,7 @@ describe("leitura de cookie", () => {
     });
 
     it("casa de ida e volta com o cabeçalho que emitimos", () => {
-        const sessao = criarSessao(SENHA, AGORA);
+        const sessao = criarSessao(CHAVE, AGORA);
         const emitido = cabecalhoDoCookie(sessao, 3600);
         const valor = emitido.slice(0, emitido.indexOf(";"));
         assert.equal(lerCookie(valor, NOME_DO_COOKIE), sessao);

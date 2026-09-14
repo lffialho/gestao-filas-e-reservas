@@ -370,13 +370,16 @@ secao("relatório e diário");
 // ------------------------------------------------------------------------ painel
 secao("o painel, e a senha dele");
 {
-    const senha = /^\s*PAINEL_SENHA\s*=\s*(.+)$/mu.exec(env)?.[1]?.trim().replace(/^"|"$/gu, "");
-    const PAINEL = "http://localhost:5173";
+    const PAINEL = process.env["PAINEL_URL"] ?? "http://localhost:5173";
     const semSeguir = { redirect: "manual" };
+    const senhaDoTeste = process.argv.find((a) => a.startsWith("--senha="))?.slice("--senha=".length);
 
-    // Sem sessão: nada sai, nem os estáticos.
+    // Em que estado está o painel: senha ainda por criar, ou já criada.
     const raiz = await fetch(`${PAINEL}/`, semSeguir);
-    conferir("painel sem senha redireciona para /entrar", raiz.status === 303, `status ${raiz.status}`);
+    const destino = raiz.headers.get("location") ?? "";
+    const primeiraAbertura = destino.endsWith("/criar-senha");
+
+    conferir("o painel exige senha antes de qualquer coisa", raiz.status === 303, `status ${raiz.status}`);
 
     const estatico = await fetch(`${PAINEL}/estilo.css`, semSeguir);
     conferir("nem o CSS sai sem sessão", estatico.status === 303, `status ${estatico.status}`);
@@ -390,46 +393,78 @@ secao("o painel, e a senha dele");
         JSON.stringify(corpo)
     );
 
-    const entrada = await fetch(`${PAINEL}/entrar`);
-    conferir("a tela de entrada abre", entrada.status === 200, `status ${entrada.status}`);
+    if (primeiraAbertura) {
+        const tela = await fetch(`${PAINEL}/criar-senha`);
+        conferir(
+            "primeira abertura: a tela de criar senha abre",
+            tela.status === 200,
+            `status ${tela.status}`
+        );
+        console.log("  --    senha ainda não criada; o resto do painel se confere depois de criá-la");
+    } else {
+        const tela = await fetch(`${PAINEL}/entrar`);
+        conferir("a tela de entrada abre", tela.status === 200, `status ${tela.status}`);
 
-    const errada = await fetch(`${PAINEL}/entrar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ senha: "chute" }).toString(),
-        redirect: "manual"
-    });
-    conferir("senha errada é recusada", errada.status === 401, `status ${errada.status}`);
+        const recriar = await fetch(`${PAINEL}/criar-senha`, semSeguir);
+        conferir(
+            "com senha criada, /criar-senha não serve para trocá-la",
+            recriar.status === 303 && (recriar.headers.get("location") ?? "").endsWith("/entrar"),
+            `status ${recriar.status} -> ${recriar.headers.get("location")}`
+        );
 
-    const certa = await fetch(`${PAINEL}/entrar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ senha: senha ?? "" }).toString(),
-        redirect: "manual"
-    });
-    conferir("senha certa entra", certa.status === 303, `status ${certa.status}`);
+        const errada = await fetch(`${PAINEL}/entrar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ senha: "chute-que-nao-e-a-senha" }).toString(),
+            redirect: "manual"
+        });
+        conferir("senha errada é recusada", errada.status === 401, `status ${errada.status}`);
+    }
 
-    const posto = certa.headers.get("set-cookie") ?? "";
-    conferir("o cookie é HttpOnly", /HttpOnly/iu.test(posto), posto.slice(0, 60));
-    conferir("o cookie é SameSite=Strict", /SameSite=Strict/iu.test(posto), posto.slice(0, 60));
+    if (senhaDoTeste === undefined) {
+        console.log("  --    passe --senha=<a senha> para conferir também o que só se vê autenticado");
+    } else {
+        const certa = await fetch(`${PAINEL}/entrar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ senha: senhaDoTeste }).toString(),
+            redirect: "manual"
+        });
+        conferir("a senha informada entra", certa.status === 303, `status ${certa.status}`);
 
-    const cookie = posto.slice(0, posto.indexOf(";"));
+        const posto = certa.headers.get("set-cookie") ?? "";
+        conferir("o cookie é HttpOnly", /HttpOnly/iu.test(posto), posto.slice(0, 60));
+        conferir("o cookie é SameSite=Strict", /SameSite=Strict/iu.test(posto), posto.slice(0, 60));
 
-    const comSessao = await fetch(`${PAINEL}/api/salao`, { headers: { cookie } });
-    conferir("com sessão, o painel repassa a API", comSessao.status === 200, `status ${comSessao.status}`);
+        const cookie = posto.slice(0, posto.indexOf(";"));
 
-    const pagina = await fetch(`${PAINEL}/`, { headers: { cookie } });
-    conferir("com sessão, o painel serve a tela", pagina.status === 200, `status ${pagina.status}`);
+        const comSessao = await fetch(`${PAINEL}/api/salao`, { headers: { cookie } });
+        conferir(
+            "com sessão, o painel repassa a API",
+            comSessao.status === 200,
+            `status ${comSessao.status}`
+        );
 
-    const html = await pagina.text();
-    conferir("o token não aparece no HTML servido", !html.includes(token), "TOKEN VAZANDO NO HTML");
+        const pagina = await fetch(`${PAINEL}/`, { headers: { cookie } });
+        conferir("com sessão, o painel serve a tela", pagina.status === 200, `status ${pagina.status}`);
 
-    const forjado = `${cookie.split("=")[0]}=99999999999999.assinaturafalsa`;
-    const comForjado = await fetch(`${PAINEL}/api/salao`, { headers: { cookie: forjado } });
-    conferir("cookie forjado não entra", comForjado.status === 401, `status ${comForjado.status}`);
+        const html = await pagina.text();
+        conferir("o token não aparece no HTML servido", !html.includes(token), "TOKEN VAZANDO NO HTML");
 
-    const saiu = await fetch(`${PAINEL}/sair`, { headers: { cookie }, redirect: "manual" });
-    conferir("/sair encerra a sessão", saiu.status === 303, `status ${saiu.status}`);
+        const forjado = `${cookie.split("=")[0]}=99999999999999.assinaturafalsa`;
+        const comForjado = await fetch(`${PAINEL}/api/salao`, { headers: { cookie: forjado } });
+        conferir("cookie forjado não entra", comForjado.status === 401, `status ${comForjado.status}`);
+
+        const trocaSemSessao = await fetch(`${PAINEL}/trocar-senha`, semSeguir);
+        conferir(
+            "trocar senha exige estar logado",
+            trocaSemSessao.status === 303,
+            `status ${trocaSemSessao.status}`
+        );
+
+        const saiu = await fetch(`${PAINEL}/sair`, { headers: { cookie }, redirect: "manual" });
+        conferir("/sair encerra a sessão", saiu.status === 303, `status ${saiu.status}`);
+    }
 }
 
 // ------------------------------------------------------------------------ fim

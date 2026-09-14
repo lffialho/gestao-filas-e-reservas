@@ -7,13 +7,22 @@ import {
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { paginaDeEntrada } from "./entrar.js";
+import { paginaDeCriarSenha, paginaDeEntrada, paginaDeTrocarSenha } from "./entrar.js";
+import {
+    chaveDeSessao,
+    type Credencial,
+    criarCredencial,
+    gravarCredencial,
+    lerCredencial,
+    MINIMO_DE_CARACTERES,
+    senhaConfere,
+    SenhaInvalida
+} from "./credencial.js";
 import {
     cabecalhoDoCookie,
     cabecalhoParaSair,
     criarSessao,
     DURACAO_EM_HORAS,
-    iguaisEmTempoConstante,
     lerCookie,
     NOME_DO_COOKIE,
     sessaoValida
@@ -56,30 +65,25 @@ interface Configuracao {
     porta: number;
     api: URL;
     autorizacao: string | null;
-    /** `null` só com PAINEL_SEM_SENHA=1, que é para desenvolvimento. */
-    senha: string | null;
+    /** Onde a senha do painel fica guardada, como hash. */
+    arquivoDeSenha: string;
+    /** Só com PAINEL_SEM_SENHA=1, que é para desenvolvimento. */
+    semSenha: boolean;
 }
 
 /**
- * A senha do painel.
+ * Onde a senha do painel mora.
  *
- * **Exigida por padrão**, como o token do serviço. Quem esquece de configurar
- * não pode acabar com um painel aberto na rede sem perceber — esse é justamente
- * o modo de falhar que a senha existe para evitar, e ele é silencioso: o painel
- * sobe, funciona, e só não pede nada a ninguém.
+ * Ao lado do `.env` por padrão, que é a pasta do projeto — o mesmo lugar de
+ * onde o painel já roda. `PAINEL_SEM_SENHA=1` abre tudo, e é só para
+ * desenvolvimento: a linha de subida diz isso em voz alta.
  */
-function lerSenha(): string | null {
-    const senha = process.env["PAINEL_SENHA"];
-    if (senha !== undefined && senha.trim() !== "") {
-        return senha.trim();
+function arquivoDeSenha(): string {
+    const escolhido = process.env["PAINEL_SENHA_ARQUIVO"];
+    if (escolhido !== undefined && escolhido.trim() !== "") {
+        return resolve(escolhido.trim());
     }
-    if (process.env["PAINEL_SEM_SENHA"] === "1") {
-        return null;
-    }
-    throw new ConfiguracaoInvalida(
-        "Defina PAINEL_SENHA com a senha do painel, ou PAINEL_SEM_SENHA=1 em desenvolvimento.\n" +
-            "Sem isso, qualquer um na rede do restaurante abre o painel e manda no salão."
-    );
+    return join(AQUI, "..", "painel-senha.json");
 }
 
 function lerConfiguracao(): Configuracao {
@@ -96,14 +100,19 @@ function lerConfiguracao(): Configuracao {
         throw new ConfiguracaoInvalida(`SALAO_API não é uma URL: "${bruto}".`);
     }
 
-    const senha = lerSenha();
+    const comum = {
+        porta,
+        api,
+        arquivoDeSenha: arquivoDeSenha(),
+        semSenha: process.env["PAINEL_SEM_SENHA"] === "1"
+    };
 
     const token = process.env["SALAO_TOKEN"];
     if (token !== undefined && token.trim() !== "") {
-        return { porta, api, autorizacao: `Bearer ${token.trim()}`, senha };
+        return { ...comum, autorizacao: `Bearer ${token.trim()}` };
     }
     if (process.env["SALAO_SEM_AUTENTICACAO"] === "1") {
-        return { porta, api, autorizacao: null, senha };
+        return { ...comum, autorizacao: null };
     }
     throw new ConfiguracaoInvalida(
         "Defina SALAO_TOKEN com o mesmo token do serviço, ou SALAO_SEM_AUTENTICACAO=1 em desenvolvimento."
@@ -227,41 +236,189 @@ function esperarUmPouco(): Promise<void> {
     return new Promise((pronto) => setTimeout(pronto, 400));
 }
 
-async function tratarEntrada(
+const HTML = "text/html; charset=utf-8";
+
+function entregarSessao(resposta: ServerResponse, credencial: Credencial, destino: string): void {
+    resposta.writeHead(303, {
+        Location: destino,
+        "Set-Cookie": cabecalhoDoCookie(criarSessao(chaveDeSessao(credencial)), DURACAO_EM_HORAS * 60 * 60)
+    });
+    resposta.end();
+}
+
+async function camposDoFormulario(requisicao: IncomingMessage): Promise<URLSearchParams | null> {
+    try {
+        return await lerFormulario(requisicao);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * A primeira abertura: criar a senha.
+ *
+ * Só existe enquanto não há senha nenhuma. Depois de criada, este caminho passa
+ * a mandar para `/entrar` — senão seria uma porta para trocar a senha de quem
+ * já tem uma, sem saber a antiga.
+ */
+async function tratarCriacao(
     requisicao: IncomingMessage,
     resposta: ServerResponse,
-    senha: string
+    config: Configuracao
 ): Promise<void> {
     if (requisicao.method === "GET" || requisicao.method === "HEAD") {
-        responder(resposta, 200, TIPOS[".html"] ?? "text/html", paginaDeEntrada(null));
+        responder(resposta, 200, HTML, paginaDeCriarSenha(null));
         return;
     }
-
     if (requisicao.method !== "POST") {
         responder(resposta, 405, "text/plain; charset=utf-8", "Só GET e POST aqui.");
         return;
     }
 
-    let campos: URLSearchParams;
+    const campos = await camposDoFormulario(requisicao);
+    if (campos === null) {
+        responder(resposta, 400, HTML, paginaDeCriarSenha("Pedido inválido."));
+        return;
+    }
+
+    const senha = campos.get("senha") ?? "";
+    if (senha !== (campos.get("repetida") ?? "")) {
+        responder(resposta, 400, HTML, paginaDeCriarSenha("As duas senhas não são iguais."));
+        return;
+    }
+
+    let credencial: Credencial;
     try {
-        campos = await lerFormulario(requisicao);
+        credencial = criarCredencial(senha);
+    } catch (erro) {
+        const recado =
+            erro instanceof SenhaInvalida
+                ? erro.message
+                : `A senha precisa de pelo menos ${MINIMO_DE_CARACTERES} caracteres.`;
+        responder(resposta, 400, HTML, paginaDeCriarSenha(recado));
+        return;
+    }
+
+    try {
+        gravarCredencial(config.arquivoDeSenha, credencial);
     } catch {
-        responder(resposta, 400, TIPOS[".html"] ?? "text/html", paginaDeEntrada("Pedido inválido."));
+        // Sem poder gravar, aceitar a senha seria mentira: ela sumiria no
+        // próximo reinício e ninguém entenderia por quê.
+        responder(
+            resposta,
+            500,
+            HTML,
+            paginaDeCriarSenha(
+                `Não consegui gravar em ${config.arquivoDeSenha}. Confira a permissão da pasta.`
+            )
+        );
         return;
     }
 
-    if (!iguaisEmTempoConstante(campos.get("senha") ?? "", senha)) {
+    process.stdout.write(`${new Date().toISOString()} senha do painel criada
+`);
+    entregarSessao(resposta, credencial, "/");
+}
+
+async function tratarEntrada(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    credencial: Credencial
+): Promise<void> {
+    if (requisicao.method === "GET" || requisicao.method === "HEAD") {
+        responder(resposta, 200, HTML, paginaDeEntrada(null));
+        return;
+    }
+    if (requisicao.method !== "POST") {
+        responder(resposta, 405, "text/plain; charset=utf-8", "Só GET e POST aqui.");
+        return;
+    }
+
+    const campos = await camposDoFormulario(requisicao);
+    if (campos === null) {
+        responder(resposta, 400, HTML, paginaDeEntrada("Pedido inválido."));
+        return;
+    }
+
+    if (!senhaConfere(campos.get("senha") ?? "", credencial)) {
         await esperarUmPouco();
-        process.stdout.write(`${new Date().toISOString()} senha errada no painel\n`);
-        responder(resposta, 401, TIPOS[".html"] ?? "text/html", paginaDeEntrada("Senha errada."));
+        process.stdout.write(`${new Date().toISOString()} senha errada no painel
+`);
+        responder(resposta, 401, HTML, paginaDeEntrada("Senha errada."));
         return;
     }
 
-    resposta.writeHead(303, {
-        Location: "/",
-        "Set-Cookie": cabecalhoDoCookie(criarSessao(senha), DURACAO_EM_HORAS * 60 * 60)
-    });
-    resposta.end();
+    entregarSessao(resposta, credencial, "/");
+}
+
+/**
+ * Trocar a senha, sabendo a atual.
+ *
+ * Exigir a senha atual mesmo de quem já está logado é o que impede que um
+ * tablet deixado aberto no balcão vire a troca da senha da casa. E como a chave
+ * das sessões sai do hash, trocar a senha derruba as sessões de todo o resto —
+ * inclusive a de quem trocou, que recebe uma nova aqui mesmo.
+ */
+async function tratarTroca(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    credencial: Credencial,
+    config: Configuracao
+): Promise<void> {
+    if (requisicao.method === "GET" || requisicao.method === "HEAD") {
+        responder(resposta, 200, HTML, paginaDeTrocarSenha(null, false));
+        return;
+    }
+    if (requisicao.method !== "POST") {
+        responder(resposta, 405, "text/plain; charset=utf-8", "Só GET e POST aqui.");
+        return;
+    }
+
+    const campos = await camposDoFormulario(requisicao);
+    if (campos === null) {
+        responder(resposta, 400, HTML, paginaDeTrocarSenha("Pedido inválido.", false));
+        return;
+    }
+
+    if (!senhaConfere(campos.get("atual") ?? "", credencial)) {
+        await esperarUmPouco();
+        responder(resposta, 401, HTML, paginaDeTrocarSenha("A senha atual não confere.", false));
+        return;
+    }
+
+    const nova = campos.get("senha") ?? "";
+    if (nova !== (campos.get("repetida") ?? "")) {
+        responder(resposta, 400, HTML, paginaDeTrocarSenha("As duas senhas novas não são iguais.", false));
+        return;
+    }
+
+    let trocada: Credencial;
+    try {
+        trocada = criarCredencial(nova);
+    } catch (erro) {
+        const recado =
+            erro instanceof SenhaInvalida
+                ? erro.message
+                : `A senha precisa de pelo menos ${MINIMO_DE_CARACTERES} caracteres.`;
+        responder(resposta, 400, HTML, paginaDeTrocarSenha(recado, false));
+        return;
+    }
+
+    try {
+        gravarCredencial(config.arquivoDeSenha, trocada);
+    } catch {
+        responder(
+            resposta,
+            500,
+            HTML,
+            paginaDeTrocarSenha(`Não consegui gravar em ${config.arquivoDeSenha}.`, false)
+        );
+        return;
+    }
+
+    process.stdout.write(`${new Date().toISOString()} senha do painel trocada
+`);
+    entregarSessao(resposta, trocada, "/");
 }
 
 function ehApi(caminho: string): boolean {
@@ -269,41 +426,13 @@ function ehApi(caminho: string): boolean {
 }
 
 /**
- * O portão: resolve tudo que diz respeito a entrar e sair.
+ * Barra quem não pode passar.
  *
- * Devolve `true` quando já respondeu — aí não há mais o que atender. Separado
- * de `atender` porque misturar as duas coisas numa função só passava do limite
- * de complexidade do Biome, e o limite estava certo: são duas decisões
- * diferentes, "esta pessoa pode?" e "o que ela pediu?".
+ * A API responde em JSON, para o painel saber reagir; o resto manda a pessoa
+ * para a tela certa. Devolver HTML a um `fetch` faria o painel mostrar "erro
+ * desconhecido" no lugar de pedir a senha.
  */
-function portao(
-    requisicao: IncomingMessage,
-    resposta: ServerResponse,
-    caminho: string,
-    senha: string | null
-): boolean {
-    if (caminho === "/sair") {
-        resposta.writeHead(303, { Location: "/entrar", "Set-Cookie": cabecalhoParaSair() });
-        resposta.end();
-        return true;
-    }
-
-    if (senha === null) {
-        return false;
-    }
-
-    if (caminho === "/entrar") {
-        void tratarEntrada(requisicao, resposta, senha);
-        return true;
-    }
-
-    if (sessaoValida(lerCookie(requisicao.headers.cookie, NOME_DO_COOKIE), senha)) {
-        return false;
-    }
-
-    // A API responde em JSON, para o painel saber reagir; o resto manda a
-    // pessoa para a tela de entrada. Devolver HTML a um fetch faria o painel
-    // mostrar "erro desconhecido" no lugar de pedir a senha.
+function recusar(resposta: ServerResponse, caminho: string, destino: string): void {
     if (ehApi(caminho)) {
         responder(
             resposta,
@@ -313,11 +442,91 @@ function portao(
                 erro: { tipo: "PainelNaoAutenticado", mensagem: "Entre no painel de novo." }
             })
         );
+        return;
+    }
+    resposta.writeHead(303, { Location: destino });
+    resposta.end();
+}
+
+/** Enquanto não há senha, o painel inteiro é a tela de criá-la. */
+function portaoSemSenhaAinda(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    caminho: string,
+    config: Configuracao
+): boolean {
+    if (caminho === "/criar-senha") {
+        void tratarCriacao(requisicao, resposta, config);
+        return true;
+    }
+    recusar(resposta, caminho, "/criar-senha");
+    return true;
+}
+
+/**
+ * O portão: resolve tudo que diz respeito a criar senha, entrar, trocar e sair.
+ *
+ * Devolve `true` quando já respondeu — aí não há mais o que atender. Separado
+ * de `atender` porque são duas decisões diferentes, "esta pessoa pode?" e "o
+ * que ela pediu?", e juntá-las passava do limite de complexidade do Biome.
+ *
+ * A credencial é lida do disco a cada pedido. A um punhado de leituras por
+ * segundo, que é o que um painel faz, o custo é irrelevante — e em troca
+ * trocar a senha vale na hora, e apagar o arquivo devolve o painel à primeira
+ * abertura sem precisar reiniciar nada.
+ */
+function portao(
+    requisicao: IncomingMessage,
+    resposta: ServerResponse,
+    caminho: string,
+    config: Configuracao
+): boolean {
+    if (config.semSenha) {
+        return false;
+    }
+
+    const credencial = lerCredencial(config.arquivoDeSenha);
+    if (credencial === null) {
+        return portaoSemSenhaAinda(requisicao, resposta, caminho, config);
+    }
+
+    if (caminho === "/sair") {
+        resposta.writeHead(303, { Location: "/entrar", "Set-Cookie": cabecalhoParaSair() });
+        resposta.end();
         return true;
     }
 
-    resposta.writeHead(303, { Location: "/entrar" });
-    resposta.end();
+    // Já há senha: criar de novo seria trocá-la sem saber a antiga.
+    if (caminho === "/criar-senha") {
+        resposta.writeHead(303, { Location: "/entrar" });
+        resposta.end();
+        return true;
+    }
+
+    if (caminho === "/entrar") {
+        void tratarEntrada(requisicao, resposta, credencial);
+        return true;
+    }
+
+    const autenticado = sessaoValida(
+        lerCookie(requisicao.headers.cookie, NOME_DO_COOKIE),
+        chaveDeSessao(credencial)
+    );
+
+    if (caminho === "/trocar-senha") {
+        if (autenticado) {
+            void tratarTroca(requisicao, resposta, credencial, config);
+        } else {
+            recusar(resposta, caminho, "/entrar");
+        }
+        return true;
+    }
+
+    if (autenticado) {
+        return false;
+    }
+
+    recusar(resposta, caminho, "/entrar");
     return true;
 }
 
@@ -346,7 +555,7 @@ function iniciar(): void {
     const servidor = createServer((requisicao, resposta) => {
         const caminho = new URL(requisicao.url ?? "/", "http://local").pathname;
 
-        if (!portao(requisicao, resposta, caminho, config.senha)) {
+        if (!portao(requisicao, resposta, caminho, config)) {
             atender(requisicao, resposta, caminho, config);
         }
     });
@@ -355,7 +564,8 @@ function iniciar(): void {
         process.stdout.write(
             `painel em http://localhost:${config.porta} — api em ${config.api.origin}` +
                 `${config.autorizacao === null ? " (sem token)" : ""}` +
-                `${config.senha === null ? " — SEM SENHA, aberto a quem alcançar esta porta" : ""}\n`
+                `${config.semSenha ? " — SEM SENHA, aberto a quem alcançar esta porta" : ""}` +
+                `${!config.semSenha && lerCredencial(config.arquivoDeSenha) === null ? " — primeira abertura: crie a senha" : ""}\n`
         );
     });
 
