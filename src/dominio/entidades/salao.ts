@@ -13,6 +13,7 @@ import {
     GrupoSemMesaPossivel,
     IdentidadeDivergente,
     MesaDuplicada,
+    MesaEmUso,
     MesaNaoEncontrada,
     NumeroDeMesaDuplicado,
     PosicaoOcupada,
@@ -207,6 +208,35 @@ export class Salao {
         });
         const atendido = this.#entregarAoProximoDaFila(propria);
         return { mesa: retratar(propria), atendido };
+    }
+
+    /**
+     * Tira a mesa da planta.
+     *
+     * Só sai mesa livre. Uma mesa ocupada tem gente nela; uma mesa reservada
+     * acabou de ser chamada para alguém que está a caminho — apagar qualquer
+     * das duas sumiria com um atendimento em curso sem ninguém decidir o que
+     * fazer com quem está lá. Libere antes, e aí remover é só desenho.
+     *
+     * O diário não perde nada: cada evento carrega o número e a capacidade da
+     * mesa no momento em que aconteceu, justamente para que a mesa de hoje
+     * sumir não apague o relatório de ontem.
+     */
+    removerMesa(mesaId: string): InfoMesa {
+        const mesa = this.#obterMesa(mesaId);
+
+        if (!mesa.estaDisponivel) {
+            throw new MesaEmUso(mesaId, mesa.status);
+        }
+
+        const retrato = retratar(mesa);
+        this.#mesas.delete(mesaId);
+        this.#registrar("mesa_removida", {
+            mesaId: retrato.id,
+            mesaNumero: retrato.numero,
+            capacidade: retrato.capacidade
+        });
+        return retrato;
     }
 
     /**

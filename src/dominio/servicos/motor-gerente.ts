@@ -104,6 +104,11 @@ export class MotorGerente {
         return resultado;
     }
 
+    /** Tira a mesa da planta. Só sai mesa livre. */
+    async removerMesa(mesaId: string): Promise<InfoMesa> {
+        return this.#repositorio.transacao((salao) => salao.removerMesa(mesaId));
+    }
+
     async consultarMesa(mesaId: string): Promise<InfoMesa | undefined> {
         return this.#repositorio.consulta((salao) => salao.consultarMesa(mesaId));
     }

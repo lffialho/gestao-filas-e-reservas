@@ -10,6 +10,7 @@
  */
 export type TipoDeEvento =
     | "mesa_cadastrada"
+    | "mesa_removida"
     | "sentou_direto"
     | "entrou_na_fila"
     | "saiu_da_fila"

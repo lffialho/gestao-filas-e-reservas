@@ -113,6 +113,77 @@ describe("MotorGerente", () => {
         });
     });
 
+    describe("removerMesa", () => {
+        it("tira a mesa livre da planta", async () => {
+            const motor = montarMotor();
+
+            const removida = await motor.removerMesa("m2");
+
+            assert.equal(removida.numero, 2);
+            assert.equal(await motor.consultarMesa("m2"), undefined);
+            assert.equal(await motor.totalDeMesas(), 1);
+        });
+
+        it("recusa mesa que tem gente sentada", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+            await motor.ocuparMesa("m2");
+
+            await assert.rejects(motor.removerMesa("m2"), { name: "MesaEmUso" });
+            assert.notEqual(await motor.consultarMesa("m2"), undefined, "continua na planta");
+        });
+
+        // Reservada é "chamada, ainda não sentou": alguém está a caminho dela.
+        it("recusa mesa já chamada para alguém", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+
+            await assert.rejects(motor.removerMesa("m2"), { name: "MesaEmUso" });
+        });
+
+        it("aceita depois de a mesa ser liberada", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+            await motor.liberarMesa("m2");
+
+            await assert.doesNotReject(motor.removerMesa("m2"));
+        });
+
+        it("recusa mesa que não existe", async () => {
+            const motor = montarMotor();
+            await assert.rejects(motor.removerMesa("m99"), { name: "MesaNaoEncontrada" });
+        });
+
+        it("o número volta a ficar livre para outra mesa", async () => {
+            const motor = montarMotor();
+            await motor.removerMesa("m2");
+
+            const nova = await motor.adicionarMesa(new Mesa("m2-nova", 2, 6));
+            assert.equal(nova.mesa.numero, 2, "o número 2 foi devolvido ao salão");
+        });
+
+        /**
+         * Cada evento carrega o número e a capacidade da mesa no momento em que
+         * aconteceu, justamente para isto: mexer na planta hoje não pode apagar
+         * o que aconteceu ontem.
+         */
+        it("não apaga do diário o que aquela mesa já fez", async () => {
+            const motor = montarMotor();
+            await motor.receberCliente(cliente("Ana", 2, "1111"));
+            await motor.liberarMesa("m2");
+            await motor.removerMesa("m2");
+
+            const resumo = await motor.resumirPeriodo({
+                inicio: new Date(0),
+                fim: new Date("2100-01-01")
+            });
+
+            assert.equal(resumo.gruposAtendidos, 1);
+            assert.equal(resumo.porMesa.length, 1);
+            assert.equal(resumo.porMesa[0]?.mesaNumero, 2, "o giro da mesa 2 continua contado");
+        });
+    });
+
     describe("fazerReserva", () => {
         it("reserva e registra o cliente na mesa", async () => {
             const motor = montarMotor();
