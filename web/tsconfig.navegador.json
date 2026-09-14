@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./navegador",
+    "outDir": "./publico/js",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["navegador/**/*"]
+}

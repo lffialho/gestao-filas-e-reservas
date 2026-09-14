@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./servidor",
+    "outDir": "./dist",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["servidor/**/*"]
+}

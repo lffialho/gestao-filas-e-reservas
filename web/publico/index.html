@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Painel do salão</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
+    <link rel="stylesheet" href="/estilo.css">
+</head>
+<body>
+    <!--
+        A estrutura fixa do painel. O que a atualização automática substitui são
+        só os contêineres vazios abaixo — #planta, #cartoes, #diario, #fila e
+        #aviso. O cabeçalho, a busca e a janela de ação nunca são tocados por
+        ela, e é isso que deixa digitar um nome enquanto a tela se atualiza.
+    -->
+    <header class="cabecalho">
+        <div class="cabecalho__marca">
+            <span class="cabecalho__titulo">SALÃO</span>
+            <span id="relogio" class="cabecalho__relogio mono"></span>
+        </div>
+
+        <div class="caixa-de-busca">
+            <svg class="caixa-de-busca__lupa" width="22" height="22" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5 21 21"></path>
+            </svg>
+            <input id="busca" type="search" autocomplete="off" spellcheck="false"
+                   placeholder="Buscar por nome ou telefone…" aria-label="Buscar por nome ou telefone">
+            <kbd class="caixa-de-busca__tecla mono">/</kbd>
+        </div>
+
+        <button id="fechar-o-dia" type="button" class="botao botao--contorno">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFB627"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 3h12v7a6 6 0 0 1-12 0z"></path><path d="M9 21h6M12 16v5"></path>
+            </svg>
+            Fechar o dia
+        </button>
+    </header>
+
+    <p id="aviso" class="aviso" role="status" hidden></p>
+
+    <main class="tabuleiro">
+        <div id="planta" class="planta grade" aria-label="Planta do salão"></div>
+
+        <aside class="lateral">
+            <div id="cartoes" class="cartoes"></div>
+
+            <button id="chegou" type="button" class="botao botao--cheio">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.6" stroke-linecap="round" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14"></path>
+                </svg>
+                Chegou alguém
+            </button>
+
+            <section class="diario">
+                <span class="rotulo">Últimos eventos</span>
+                <div id="diario" class="diario__linhas"></div>
+                <div class="legenda">
+                    <span><span class="lugar ocupado"></span>sentado</span>
+                    <span><span class="lugar vago"></span>lugar sobrando</span>
+                    <span><span class="lugar livre"></span>mesa livre</span>
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <section id="fila" class="fila" aria-label="Fila de espera"></section>
+
+    <div id="modal" class="modal" hidden></div>
+
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>
