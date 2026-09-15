@@ -5,6 +5,7 @@ import { DadosInvalidos } from "../dominio/erros.js";
 import type { Periodo } from "../dominio/eventos.js";
 import type { MotorGerente } from "../dominio/servicos/motor-gerente.js";
 import { descreverErro, registradorSilencioso, type Registrador } from "../compartilhado/log/registrador.js";
+import { mascararCaminho } from "../compartilhado/log/mascarar.js";
 import { autenticadorAberto, type Autenticador } from "./autenticacao.js";
 import { traduzirErro } from "./erros-http.js";
 import { itemFilaJson, liberacaoJson, recepcaoJson, reservaJson } from "./representacoes.js";
@@ -519,7 +520,7 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
             const duracaoMs = Number(process.hrtime.bigint() - comecou) / 1e6;
             registrador.info("requisicao", {
                 metodo,
-                caminho: caminhoRegistrado,
+                caminho: mascararCaminho(caminhoRegistrado),
                 status: resposta.statusCode,
                 duracaoMs: Math.round(duracaoMs * 100) / 100
             });
@@ -548,7 +549,7 @@ export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}
                 if (traduzido.inesperado) {
                     registrador.erro("requisicao_falhou", {
                         metodo,
-                        caminho: caminhoRegistrado,
+                        caminho: mascararCaminho(caminhoRegistrado),
                         ...descreverErro(erro)
                     });
                 }

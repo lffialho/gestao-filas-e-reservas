@@ -1,5 +1,11 @@
 import { dirname, join, resolve } from "node:path";
-import { criarRegistradorJson, descreverErro, type Registrador } from "./compartilhado/log/registrador.js";
+import {
+    criarRegistradorJson,
+    descreverErro,
+    type Nivel,
+    type Registrador
+} from "./compartilhado/log/registrador.js";
+import { criarEscritorDeArquivo } from "./infra/log/arquivo-de-log.js";
 import { Mesa } from "./dominio/entidades/mesa.js";
 import { type EstadoDoBackup, RotinaDeBackup } from "./infra/backup/rotina-de-backup.js";
 import { RotinaDePulso } from "./infra/pulso/rotina-de-pulso.js";
@@ -30,6 +36,7 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_PULSO_MINUTOS   | 5      | De quantos em quantos minutos avisar             |
  * | SALAO_CASA            | —      | Nome desta casa, para quem recebe o pulso        |
  * | SALAO_RETENCAO_DIAS   | 90     | Depois disso, nome e telefone saem do diário     |
+ * | SALAO_LOG_ARQUIVO     | —      | Guarda o log também num arquivo, com rodízio      |
  */
 
 /**
@@ -147,7 +154,44 @@ function montarArmazenamento(): {
     };
 }
 
-const registrador = criarRegistradorJson({ contexto: { servico: "gestao-filas-e-reservas" } });
+/**
+ * Para onde o log vai.
+ *
+ * Sempre para o stdout, que é o que se vê ao rodar na mão. Com
+ * `SALAO_LOG_ARQUIVO`, também para um arquivo com rodízio — sem isso, rodando
+ * como tarefa do Agendador o log se perde inteiro, e não há o que olhar quando
+ * a casa liga dizendo que algo deu errado no sábado à noite.
+ *
+ * Nome e telefone já saem mascarados de quem os escreve, então o arquivo nasce
+ * sem dado pessoal e pode ser mandado para quem dá suporte como está.
+ */
+function escritorDoLog(): ((linha: string, nivel: Nivel) => void) | undefined {
+    const caminho = process.env["SALAO_LOG_ARQUIVO"];
+    if (caminho === undefined || caminho.trim() === "") {
+        return undefined;
+    }
+
+    const paraArquivo = criarEscritorDeArquivo({ caminho: caminho.trim() });
+    return (linha, nivel) => {
+        if (nivel === "erro") {
+            process.stderr.write(`${linha}
+`);
+        } else {
+            process.stdout.write(`${linha}
+`);
+        }
+        paraArquivo(linha, nivel);
+    };
+}
+
+// Uma vez só: cada escritor tem o próprio contador de tamanho, e dois deles
+// fariam o rodízio acontecer na hora errada.
+const escrever = escritorDoLog();
+
+const registrador = criarRegistradorJson({
+    contexto: { servico: "gestao-filas-e-reservas" },
+    ...(escrever === undefined ? {} : { escrever })
+});
 
 /**
  * O aviso a quem sai da fila vai para o log. Para mandar mensagem de verdade,

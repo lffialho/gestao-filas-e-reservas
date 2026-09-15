@@ -45,12 +45,13 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 369 testes |
+| `npm test` | 389 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
 | `npm run conferir:instalacao` | Confere uma **instalação no ar**, de fora — 59 verificações |
+| `npm run suporte` | Junta num arquivo só o que o suporte pergunta |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
 | `npm run web:build` | Compila o painel: servidor para `web/dist/`, navegador para `web/publico/js/` |
 | `npm run web:env` | Sobe o painel lendo o `.env` |
@@ -72,6 +73,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_PULSO_MINUTOS` | `5` | De quantos em quantos minutos avisar |
 | `SALAO_CASA` | — | Nome desta casa, para quem recebe o pulso distinguir |
 | `SALAO_RETENCAO_DIAS` | `90` | Depois disso, nome e telefone saem do diário. `0` desliga |
+| `SALAO_LOG_ARQUIVO` | — | Guarda o log também num arquivo, com rodízio. Sem ela, só stdout |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
 | `PAINEL_SENHA_ARQUIVO` | `painel-senha.json` na raiz | Onde a senha do painel fica guardada, como hash |
@@ -241,6 +243,36 @@ abaixo.
 pedido. Conformidade também exige aviso de privacidade ao cliente do restaurante, base legal
 declarada, e contrato entre quem vende o software e a casa que o opera — quem é controlador e
 quem é operador. **Isso é trabalho de advogado, e não está feito aqui.**
+
+### Quando algo dá errado
+
+Rodando como tarefa do Agendador, **o log se perde inteiro** — ninguém vê o stdout de um
+processo que sobe sozinho ao ligar o computador. Defina `SALAO_LOG_ARQUIVO` e ele passa a ser
+guardado, com rodízio de quatro arquivos de 5 MB, que cobrem semanas sem encher o disco do
+balcão.
+
+```
+SALAO_LOG_ARQUIVO=C:\Users\voce\salao\salao.log
+```
+
+Quando a casa ligar dizendo que algo não funciona:
+
+```bash
+npm run suporte
+```
+
+Sai um `suporte-<data>.txt` com sistema, versão, datas dos builds, saúde do serviço, estado
+das cópias e as últimas 500 linhas do log. Um comando, um arquivo — em vez de um
+interrogatório por telefone com quem está no meio do serviço.
+
+**Pode ser enviado por e-mail.** Nome e telefone saem mascarados de quem os escreve, então o
+log já nasce sem dado pessoal: `DELETE /fila/+5511987654321` fica `DELETE /fila/••••4321`,
+que ainda casa com o cliente que reclamou e não carrega o número. Do `.env` vão só os nomes
+das variáveis e se estão preenchidas — o token do salão e a senha do painel nunca entram.
+
+Mascarar ao escrever, e não ao empacotar, é o que faz o arquivo em disco já nascer inofensivo:
+um log vazado não vira lista de telefones, e o pacote não depende de ninguém lembrar de
+limpá-lo.
 
 ### Sistema online
 
