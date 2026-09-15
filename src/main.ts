@@ -24,6 +24,7 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_BACKUP_PASTA    | backups/ ao lado do banco | Onde as cópias ficam |
  * | SALAO_BACKUP_HORAS    | 6      | De quantas em quantas horas copiar              |
  * | SALAO_BACKUP_COPIAS   | 28     | Quantas cópias guardar (28 × 6h ≈ uma semana)   |
+ * | SALAO_BACKUP_ESPELHO  | —      | Segunda pasta das cópias; aponte para um OneDrive |
  */
 
 /**
@@ -107,6 +108,7 @@ function montarBackup(repositorio: RepositorioDoSalaoSqlite, banco: string): Rot
 
     return new RotinaDeBackup((destino) => repositorio.copiarPara(destino), {
         pasta: process.env["SALAO_BACKUP_PASTA"] ?? join(dirname(resolve(banco)), "backups"),
+        espelho: process.env["SALAO_BACKUP_ESPELHO"],
         aCadaHoras: inteiroDoAmbiente("SALAO_BACKUP_HORAS", 6, 1),
         copias: inteiroDoAmbiente("SALAO_BACKUP_COPIAS", 28, 1),
         registrador
@@ -159,7 +161,11 @@ function iniciar(): void {
 
     const motor = new MotorGerente(armazenamento.repositorio, { notificador, registrador });
 
-    const servidor = criarServidor(motor, { autenticador, registrador });
+    const servidor = criarServidor(motor, {
+        autenticador,
+        registrador,
+        backup: () => armazenamento.backup?.estado() ?? null
+    });
 
     servidor.listen(porta, () => {
         const endereco = servidor.address();

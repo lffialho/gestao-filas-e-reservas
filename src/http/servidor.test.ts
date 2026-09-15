@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
-import { criarServidor } from "./servidor.js";
+import { criarServidor, type SaudeDoBackup } from "./servidor.js";
 import { autenticadorPorToken } from "./autenticacao.js";
 import { Mesa } from "../dominio/entidades/mesa.js";
 import { MotorGerente } from "../dominio/servicos/motor-gerente.js";
@@ -21,7 +21,7 @@ interface Api {
 }
 
 /** Sobe um servidor em porta efêmera sobre um salão novo de 2, 4 e 6 lugares. */
-async function subirApi(): Promise<Api> {
+async function subirApi(backup?: SaudeDoBackup): Promise<Api> {
     const motor = new MotorGerente(
         new RepositorioDoSalaoEmMemoria({
             mesas: [new Mesa("m1", 1, 2), new Mesa("m2", 2, 4), new Mesa("m3", 3, 6)]
@@ -30,6 +30,7 @@ async function subirApi(): Promise<Api> {
     // Erro inesperado falha o teste em vez de só sujar a saída; o log de
     // requisição é descartado para não poluir.
     const servidor: Server = criarServidor(motor, {
+        ...(backup === undefined ? {} : { backup: () => backup }),
         registrador: {
             info: () => {},
             aviso: () => {},
@@ -81,7 +82,36 @@ describe("API HTTP", () => {
         it("responde saúde", async () => {
             const { status, json } = await api().pedir("GET", "/saude");
             assert.equal(status, 200);
-            assert.deepEqual(json, { status: "ok" });
+            // Sem rotina de backup ligada — salão em memória, por exemplo — a
+            // rota diz `null` em vez de omitir o campo: quem monitora distingue
+            // "não há backup configurado" de "a resposta é de uma versão velha".
+            assert.deepEqual(json, { status: "ok", backup: null });
+        });
+
+        it("saúde conta como anda o backup", async () => {
+            // Falha de backup é silenciosa: o serviço responde igual com ou sem
+            // cópia. Publicar isto é o que dá a quem monitora como perceber.
+            const comBackup = await subirApi({
+                ultimaCopiaEm: "2026-09-14T20:00:00.000Z",
+                ultimaFalha: "disco cheio",
+                falhasSeguidas: 3,
+                espelho: { ultimaCopiaEm: null, ultimaFalha: "pendrive fora" }
+            });
+            try {
+                const { status, json } = await comBackup.pedir("GET", "/saude");
+                assert.equal(status, 200);
+                assert.deepEqual(json, {
+                    status: "ok",
+                    backup: {
+                        ultimaCopiaEm: "2026-09-14T20:00:00.000Z",
+                        ultimaFalha: "disco cheio",
+                        falhasSeguidas: 3,
+                        espelho: { ultimaCopiaEm: null, ultimaFalha: "pendrive fora" }
+                    }
+                });
+            } finally {
+                await comBackup.fechar();
+            }
         });
 
         it("404 em rota que não existe", async () => {

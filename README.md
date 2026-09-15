@@ -45,7 +45,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 332 testes |
+| `npm test` | 344 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -67,6 +67,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_BACKUP_PASTA` | `backups/` ao lado do banco | Onde as cópias ficam |
 | `SALAO_BACKUP_HORAS` | `6` | De quantas em quantas horas copiar |
 | `SALAO_BACKUP_COPIAS` | `28` | Quantas cópias guardar — 28 × 6 h ≈ uma semana |
+| `SALAO_BACKUP_ESPELHO` | — | Segunda pasta que recebe cópia de cada cópia. Aponte para o OneDrive |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
 | `PAINEL_SENHA_ARQUIVO` | `painel-senha.json` na raiz | Onde a senha do painel fica guardada, como hash |
@@ -177,9 +178,24 @@ fora, com `Copy-Item`, pode pegá-lo no meio de uma escrita e gerar um arquivo q
 e seria justamente no sábado cheio que isso aconteceria.
 
 **Uma cópia no mesmo disco não protege contra o disco morrer.** Ela cobre corrupção, engano
-e erro de operação, que é a maioria dos casos. Para o resto, aponte um OneDrive, um Google
-Drive ou um pendrive para a pasta das cópias: são arquivos comuns, qualquer sincronismo
-serve, e isso é o que transforma cópia local em backup de verdade.
+e erro de operação, que é a maioria dos casos. Para o resto existe `SALAO_BACKUP_ESPELHO`: uma
+segunda pasta que recebe cópia de cada cópia, com a mesma poda das antigas.
+
+```
+SALAO_BACKUP_ESPELHO=C:\Users\voce\OneDrive\Salao
+```
+
+Aponte para a pasta local de um OneDrive, de um Google Drive ou para um pendrive. Não há SDK
+de nuvem aqui e nem precisa haver: são arquivos comuns, e quem sincroniza é o programa que a
+casa já tem instalado. **É isto que transforma cópia local em backup de verdade.**
+
+Falhar no espelho **não** derruba a cópia local — pendrive fora da porta não pode deixar o
+restaurante sem backup nenhum —, mas aparece em `/saude`.
+
+A pasta do espelho é criada, **a de cima não**. Um caminho digitado errado, ou escrito no
+formato de outro sistema (`/c/Users/...`), o Windows resolve a partir da raiz do disco: com
+criação recursiva, a árvore inteira nasceria ali e a cópia daria "certo" num canto que
+ninguém sincroniza. Exigir que a pasta de cima exista transforma o engano num erro visível.
 
 O serviço ainda tenta uma última cópia ao encerrar, mas **não conte com ela no Windows**:
 parar a tarefa no Agendador encerra o processo sem entregar sinal nenhum, e o código de
@@ -228,7 +244,7 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 
 | Método | Rota | O que faz |
 | --- | --- | --- |
-| `GET` | `/saude` | Sinal de vida. Sem token |
+| `GET` | `/saude` | Sinal de vida **e como anda o backup**. Sem token |
 | `GET` | `/salao` | Retrato de agora: ocupação, tempo médio de espera, fila e mesas |
 | `GET` | `/relatorio` | Fechamento de um período — `?de=<ISO>&ate=<ISO>` |
 | `GET` | `/eventos` | O diário cru do período — `?de=<ISO>&ate=<ISO>&limite=<1..500>` |
@@ -621,8 +637,9 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
   empurrar as mudanças em vez de cada aba perguntar.
 - **Não dá para mudar número ou lugares de uma mesa que já existe**, só pôr e tirar. Montar
   o salão errado custa apagar e refazer — o que não perde nada do diário, mas é chato.
-- **As cópias do banco ficam no mesmo disco** e não protegem contra o disco morrer. Sincronizar
-  a pasta para fora resolve, e é manual.
+- **Sem `SALAO_BACKUP_ESPELHO`, as cópias ficam no mesmo disco** e não protegem contra o disco
+  morrer. Configurar o espelho resolve, mas alguém tem de apontá-lo — não há padrão seguro
+  para adivinhar aqui.
 - **Não há cópia no encerramento quando o Windows encerra o processo à força**, que é o
   caso normal: parar a tarefa no Agendador não entrega sinal nenhum ao Node. Medido —
   `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`

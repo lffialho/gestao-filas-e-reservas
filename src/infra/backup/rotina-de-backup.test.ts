@@ -172,3 +172,165 @@ describe("RotinaDeBackup", () => {
         repositorio.fechar();
     });
 });
+
+describe("espelho: a cópia que sai deste disco", () => {
+    /** Copiador de mentira: escreve um arquivo qualquer no destino. */
+    const escrever = (destino: string) => writeFileSync(destino, "conteudo");
+
+    it("põe cada cópia também na segunda pasta", () => {
+        const pasta = pastaNova();
+        const espelho = pastaNova();
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+
+        const rotina = new RotinaDeBackup(escrever, { pasta, espelho, aCadaHoras: 6, copias: 5, relogio });
+        const destino = rotina.agora();
+
+        assert.ok(destino !== null);
+        const nome = nomeDaCopia(new Date("2026-09-14T20:00:00.000Z"));
+        assert.ok(existsSync(join(pasta, nome)), "faltou a cópia local");
+        assert.ok(existsSync(join(espelho, nome)), "faltou a cópia no espelho");
+    });
+
+    it("cria a pasta do espelho dentro de uma que já existe", () => {
+        const pasta = pastaNova();
+        const espelho = join(pastaNova(), "copias-do-salao");
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+
+        new RotinaDeBackup(escrever, { pasta, espelho, aCadaHoras: 6, copias: 5, relogio }).agora();
+        assert.equal(readdirSync(espelho).length, 1);
+    });
+
+    it("recusa espelho cuja pasta de cima não existe, em vez de inventá-la", () => {
+        // O caso que motivou isto: um caminho no formato de outro sistema
+        // (`/c/Users/...`) o Windows resolve a partir da raiz do disco. Com
+        // criação recursiva, a árvore inteira nascia ali e a cópia "dava certo"
+        // — e o dono seguia achando que tinha backup no OneDrive.
+        const pasta = pastaNova();
+        const espelho = join(pastaNova(), "nao", "existe", "aqui");
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+
+        const rotina = new RotinaDeBackup(escrever, { pasta, espelho, aCadaHoras: 6, copias: 5, relogio });
+        const destino = rotina.agora();
+
+        assert.ok(destino !== null, "a cópia local tinha de ter saído assim mesmo");
+        assert.equal(existsSync(espelho), false, "não podia ter criado a árvore");
+
+        const estado = rotina.estado();
+        assert.equal(estado.espelho?.ultimaCopiaEm, null);
+        assert.match(String(estado.espelho?.ultimaFalha), /não existe/u);
+    });
+
+    it("a segunda cópia não tropeça na pasta que a primeira criou", () => {
+        const pasta = pastaNova();
+        const espelho = join(pastaNova(), "copias-do-salao");
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+        const rotina = new RotinaDeBackup(escrever, { pasta, espelho, aCadaHoras: 6, copias: 5, relogio });
+
+        rotina.agora();
+        relogio.avancarMinutos(60);
+        rotina.agora();
+
+        assert.equal(readdirSync(espelho).length, 2);
+        assert.equal(rotina.estado().espelho?.ultimaFalha, null);
+    });
+
+    it("apaga as antigas do espelho, como faz na pasta local", () => {
+        const pasta = pastaNova();
+        const espelho = pastaNova();
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+        const rotina = new RotinaDeBackup(escrever, { pasta, espelho, aCadaHoras: 6, copias: 2, relogio });
+
+        for (let i = 0; i < 4; i += 1) {
+            rotina.agora();
+            relogio.avancarMinutos(60);
+        }
+
+        assert.equal(readdirSync(pasta).length, 2);
+        assert.equal(readdirSync(espelho).length, 2, "o espelho encheria para sempre");
+    });
+
+    it("espelho inacessível não derruba a cópia local", () => {
+        // O caso real: pendrive tirado da porta, OneDrive desconectado. Ficar
+        // sem backup nenhum por causa disso seria trocar um risco por um pior.
+        const pasta = pastaNova();
+        const arquivo = join(pastaNova(), "isto-e-um-arquivo");
+        writeFileSync(arquivo, "x");
+        const espelho = join(arquivo, "impossivel");
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+
+        const rotina = new RotinaDeBackup(escrever, { pasta, espelho, aCadaHoras: 6, copias: 5, relogio });
+        const destino = rotina.agora();
+
+        assert.ok(destino !== null, "a cópia local tinha de ter saído");
+        assert.equal(readdirSync(pasta).length, 1);
+        assert.notEqual(rotina.estado().espelho?.ultimaFalha, null);
+    });
+});
+
+describe("estado do backup, para /saude contar", () => {
+    const escrever = (destino: string) => writeFileSync(destino, "conteudo");
+
+    it("começa sem nenhuma cópia", () => {
+        const rotina = new RotinaDeBackup(escrever, { pasta: pastaNova(), aCadaHoras: 6, copias: 5 });
+        const estado = rotina.estado();
+
+        assert.equal(estado.ultimaCopiaEm, null);
+        assert.equal(estado.ultimaFalha, null);
+        assert.equal(estado.falhasSeguidas, 0);
+    });
+
+    it("guarda quando e onde foi a última", () => {
+        const pasta = pastaNova();
+        const relogio = new RelogioFalso("2026-09-14T20:00:00.000Z");
+        const rotina = new RotinaDeBackup(escrever, { pasta, aCadaHoras: 6, copias: 5, relogio });
+        rotina.agora();
+
+        const estado = rotina.estado();
+        assert.equal(estado.ultimaCopiaEm, "2026-09-14T20:00:00.000Z");
+        assert.ok(String(estado.ultimoArquivo).startsWith(pasta));
+        assert.equal(estado.ultimaFalha, null);
+    });
+
+    it("conta as falhas seguidas, que é o sinal de que parou de copiar", () => {
+        const explodir = () => {
+            throw new Error("disco cheio");
+        };
+        const rotina = new RotinaDeBackup(explodir, { pasta: pastaNova(), aCadaHoras: 6, copias: 5 });
+
+        rotina.agora();
+        rotina.agora();
+        rotina.agora();
+
+        const estado = rotina.estado();
+        assert.equal(estado.falhasSeguidas, 3);
+        assert.match(String(estado.ultimaFalha), /disco cheio/u);
+        assert.equal(estado.ultimaCopiaEm, null);
+    });
+
+    it("um sucesso zera a contagem de falhas", () => {
+        const pasta = pastaNova();
+        let vaiFalhar = true;
+        const asVezes = (destino: string) => {
+            if (vaiFalhar) {
+                throw new Error("falhou");
+            }
+            writeFileSync(destino, "conteudo");
+        };
+        const rotina = new RotinaDeBackup(asVezes, { pasta, aCadaHoras: 6, copias: 5 });
+
+        rotina.agora();
+        assert.equal(rotina.estado().falhasSeguidas, 1);
+
+        vaiFalhar = false;
+        rotina.agora();
+
+        const estado = rotina.estado();
+        assert.equal(estado.falhasSeguidas, 0);
+        assert.equal(estado.ultimaFalha, null);
+    });
+
+    it("sem espelho configurado, não inventa um estado para ele", () => {
+        const rotina = new RotinaDeBackup(escrever, { pasta: pastaNova(), aCadaHoras: 6, copias: 5 });
+        assert.equal(rotina.estado().espelho, null);
+    });
+});
