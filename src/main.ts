@@ -9,6 +9,7 @@ import { autenticadorAberto, autenticadorPorToken, type Autenticador } from "./h
 import { criarServidor } from "./http/servidor.js";
 import { RepositorioDoSalaoEmMemoria } from "./infra/memoria/repositorio-do-salao-em-memoria.js";
 import { NotificadorDeLog } from "./infra/notificacao/notificador-de-log.js";
+import { NotificadorWhatsApp } from "./infra/notificacao/notificador-whatsapp.js";
 import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sqlite.js";
 
 /**
@@ -143,12 +144,37 @@ function montarArmazenamento(): {
 const registrador = criarRegistradorJson({ contexto: { servico: "gestao-filas-e-reservas" } });
 
 /**
- * O aviso a quem sai da fila vai para o log. Para mandar mensagem de verdade,
- * implemente `Notificador` com o provedor escolhido e entregue aqui — o
- * domínio não muda.
+ * Quem avisa o cliente de que a mesa saiu.
+ *
+ * Sem `WHATSAPP_TOKEN`, o aviso vai para o log — o salão funciona igual, e quem
+ * chama o cliente é o maître, como sempre foi. Com as três variáveis
+ * preenchidas, sai pelo WhatsApp oficial.
+ *
+ * Ligar isto **não** é só preencher variável: o número precisa estar na Cloud
+ * API da Meta e o template precisa estar aprovado. O README explica o caminho.
  */
 function montarNotificador(): Notificador {
-    return new NotificadorDeLog(registrador);
+    const token = process.env["WHATSAPP_TOKEN"];
+    const numeroRemetenteId = process.env["WHATSAPP_NUMERO_ID"];
+
+    if (token === undefined || token.trim() === "") {
+        return new NotificadorDeLog(registrador);
+    }
+    if (numeroRemetenteId === undefined || numeroRemetenteId.trim() === "") {
+        throw new ConfiguracaoInvalida(
+            "WHATSAPP_TOKEN está definido, mas WHATSAPP_NUMERO_ID não. " +
+                "Meio configurado avisaria ninguém e ninguém perceberia."
+        );
+    }
+
+    registrador.info("aviso_por_whatsapp", { numeroRemetenteId });
+    return new NotificadorWhatsApp({
+        token: token.trim(),
+        numeroRemetenteId: numeroRemetenteId.trim(),
+        template: process.env["WHATSAPP_TEMPLATE"] ?? "mesa_pronta",
+        idioma: process.env["WHATSAPP_IDIOMA"] ?? "pt_BR",
+        versao: process.env["WHATSAPP_VERSAO"]
+    });
 }
 
 function iniciar(): void {
