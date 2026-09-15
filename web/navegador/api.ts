@@ -89,6 +89,7 @@ export interface ResumoDoPeriodo {
 
 export type TipoDeEvento =
     | "mesa_cadastrada"
+    | "mesa_removida"
     | "sentou_direto"
     | "entrou_na_fila"
     | "saiu_da_fila"
@@ -166,6 +167,15 @@ async function pedir<T>(caminho: string, opcoes: RequestInit = {}): Promise<T> {
         throw new ErroDaApi(0, "SemResposta", "Não foi possível falar com o painel.", {});
     }
 
+    // Sessão vencida: a tela não tem o que fazer com este erro além de mandar
+    // a pessoa entrar de novo. Tratar aqui, num lugar só, evita que cada tela
+    // tenha de lembrar disso — e o painel recarrega sozinho quatro vezes a cada
+    // três segundos, então o erro apareceria em toda parte ao mesmo tempo.
+    if (resposta.status === 401) {
+        window.location.assign("/entrar");
+        throw new ErroDaApi(401, "PainelNaoAutenticado", "Entre no painel de novo.", {});
+    }
+
     const texto = await resposta.text();
     const corpo: unknown = texto === "" ? null : JSON.parse(texto);
 
@@ -232,5 +242,8 @@ export const api = {
         }),
 
     cadastrarMesa: (id: string, numero: number, capacidade: number): Promise<InfoMesa> =>
-        pedir("/mesas", { method: "POST", body: JSON.stringify({ id, numero, capacidade }) })
+        pedir("/mesas", { method: "POST", body: JSON.stringify({ id, numero, capacidade }) }),
+
+    removerMesa: (mesaId: string): Promise<InfoMesa> =>
+        pedir(`/mesas/${encodeURIComponent(mesaId)}`, { method: "DELETE" })
 };

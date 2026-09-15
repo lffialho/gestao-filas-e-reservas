@@ -74,4 +74,26 @@ export class RepositorioDoSalaoEmMemoria implements RepositorioDoSalao {
             .filter((evento) => evento.momento >= inicio && evento.momento < fim)
             .map((evento) => ({ ...evento }));
     }
+
+    async anonimizarEventosAte(limite: Date): Promise<number> {
+        return this.#apagarPessoalDe((evento) => evento.momento < limite.toISOString());
+    }
+
+    async esquecerTelefone(telefone: string): Promise<number> {
+        return this.#apagarPessoalDe((evento) => evento.telefone === telefone);
+    }
+
+    /** Anula nome e telefone onde couber; o resto do evento fica como estava. */
+    #apagarPessoalDe(cabe: (evento: EventoDoSalao) => boolean): number {
+        let alterados = 0;
+
+        for (const [indice, evento] of this.#diario.entries()) {
+            if (!cabe(evento) || (evento.nome === null && evento.telefone === null)) {
+                continue;
+            }
+            this.#diario[indice] = { ...evento, nome: null, telefone: null };
+            alterados += 1;
+        }
+        return alterados;
+    }
 }

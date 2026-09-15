@@ -1,0 +1,11 @@
+{
+  "_comentario": "Verifica os testes do servidor do painel, que ficam fora do build por nao serem parte do que roda.",
+  "extends": "./tsconfig.servidor.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "servidor/**/*"
+  ],
+  "exclude": []
+}

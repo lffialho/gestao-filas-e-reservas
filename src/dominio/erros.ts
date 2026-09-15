@@ -62,6 +62,22 @@ export class MesaJaDisponivel extends ErroDeDominio {
     }
 }
 
+/**
+ * Tirar da planta uma mesa que tem gente sentada, ou que acabou de ser chamada
+ * para alguém, apagaria um atendimento em curso sem ninguém decidir o que fazer
+ * com quem está lá. Libere a mesa primeiro; aí a remoção é só desenho.
+ */
+export class MesaEmUso extends ErroDeDominio {
+    readonly mesaId: string;
+    readonly statusAtual: string;
+
+    constructor(mesaId: string, statusAtual: string) {
+        super(`Mesa "${mesaId}" está em uso (status atual: ${statusAtual}) — libere antes de remover.`);
+        this.mesaId = mesaId;
+        this.statusAtual = statusAtual;
+    }
+}
+
 export class CapacidadeInsuficiente extends ErroDeDominio {
     readonly mesaId: string;
     readonly capacidade: number;

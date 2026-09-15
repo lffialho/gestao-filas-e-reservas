@@ -15,6 +15,9 @@ coverage/
 *.db-wal
 *.db-shm
 
+# Senha do painel (hash), criada na primeira abertura
+painel-senha.json
+
 # Variáveis de ambiente
 .env
 .env.*

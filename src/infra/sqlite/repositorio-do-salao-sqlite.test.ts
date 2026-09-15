@@ -51,6 +51,37 @@ const cliente = (nome: string, pessoas: number, telefone: string): Cliente =>
     new Cliente(nome, pessoas, telefone);
 
 describe("RepositorioDoSalaoSqlite — durabilidade", () => {
+    /**
+     * `#gravar` regrava o salão inteiro por transação, apagando as linhas
+     * antes. Quem remove mesa depende disso: se a escrita fosse incremental, a
+     * mesa apagada continuaria na tabela e voltaria no próximo reinício —
+     * ressuscitando no meio do expediente seguinte.
+     */
+    it("mesa removida não volta no reinício", async () => {
+        const banco = bancoTemporario();
+        try {
+            const primeiro = new RepositorioDoSalaoSqlite(banco.caminho, {
+                mesas: [new Mesa("m1", 1, 4), new Mesa("m2", 2, 2)]
+            });
+            await primeiro.transacao((salao) => salao.removerMesa("m2"));
+            primeiro.fechar();
+
+            const segundo = new RepositorioDoSalaoSqlite(banco.caminho);
+            try {
+                const retrato = await segundo.consulta((salao) => ({
+                    total: salao.totalDeMesas,
+                    m2: salao.consultarMesa("m2")
+                }));
+                assert.equal(retrato.total, 1);
+                assert.equal(retrato.m2, undefined, "a mesa apagada continua apagada");
+            } finally {
+                segundo.fechar();
+            }
+        } finally {
+            banco.apagar();
+        }
+    });
+
     it("o salão sobrevive a fechar e reabrir o processo", async () => {
         const banco = bancoTemporario();
         try {

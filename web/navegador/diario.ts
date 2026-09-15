@@ -27,6 +27,8 @@ function descrever(evento: EventoDoSalao): Linha {
     switch (evento.tipo) {
         case "mesa_cadastrada":
             return { tom: "apagado", texto: `${Mesa} entrou na planta · ${evento.capacidade} lugares` };
+        case "mesa_removida":
+            return { tom: "apagado", texto: `${Mesa} saiu da planta` };
         case "sentou_direto":
             return { tom: "ocupacao", texto: `${quem} sentou direto na ${mesa}` };
         case "entrou_na_fila":
