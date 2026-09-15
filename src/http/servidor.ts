@@ -116,7 +116,11 @@ function clienteDoCorpo(corpo: Corpo): Cliente {
 
 // --------------------------------------------------------------------------
 
-function rotas(motor: MotorGerente, backup: () => SaudeDoBackup | null): Rota[] {
+function rotas(
+    motor: MotorGerente,
+    backup: () => SaudeDoBackup | null,
+    pulso: () => SaudeDoPulso | null
+): Rota[] {
     const rota = (metodo: string, caminho: string, manipular: Manipulador): Rota => ({
         metodo,
         segmentos: caminho.split("/").filter((s) => s !== ""),
@@ -134,7 +138,7 @@ function rotas(motor: MotorGerente, backup: () => SaudeDoBackup | null): Rota[] 
         {
             ...rota("GET", "/saude", async () => ({
                 status: 200,
-                corpo: { status: "ok", backup: backup() }
+                corpo: { status: "ok", backup: backup(), pulso: pulso() }
             })),
             aberta: true
         },
@@ -382,6 +386,13 @@ export interface SaudeDoBackup {
     espelho: { ultimaCopiaEm: string | null; ultimaFalha: string | null } | null;
 }
 
+/** O que `/saude` conta sobre o pulso. Declarado aqui, como o do backup. */
+export interface SaudeDoPulso {
+    ultimoEnvioEm: string | null;
+    ultimaFalha: string | null;
+    falhasSeguidas: number;
+}
+
 export interface OpcoesDoServidor {
     /** Sem autenticador, a API fica aberta — só para desenvolvimento. */
     autenticador?: Autenticador | undefined;
@@ -392,6 +403,8 @@ export interface OpcoesDoServidor {
      * três dias responde igualzinho.
      */
     backup?: (() => SaudeDoBackup | null) | undefined;
+    /** Como anda o "Sistema online" — o pulso que sai desta casa. */
+    pulso?: (() => SaudeDoPulso | null) | undefined;
 }
 
 interface RespostaComCabecalhos extends Resposta {
@@ -480,7 +493,7 @@ async function despachar(pedido: PedidoADespachar): Promise<RespostaComCabecalho
  * decide, o que deixa o servidor testável em porta efêmera.
  */
 export function criarServidor(motor: MotorGerente, opcoes: OpcoesDoServidor = {}): Server {
-    const todas = rotas(motor, opcoes.backup ?? (() => null));
+    const todas = rotas(motor, opcoes.backup ?? (() => null), opcoes.pulso ?? (() => null));
     const autenticador = opcoes.autenticador ?? autenticadorAberto;
     const registrador = opcoes.registrador ?? registradorSilencioso;
 

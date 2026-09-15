@@ -1,7 +1,8 @@
 import { dirname, join, resolve } from "node:path";
 import { criarRegistradorJson, descreverErro, type Registrador } from "./compartilhado/log/registrador.js";
 import { Mesa } from "./dominio/entidades/mesa.js";
-import { RotinaDeBackup } from "./infra/backup/rotina-de-backup.js";
+import { type EstadoDoBackup, RotinaDeBackup } from "./infra/backup/rotina-de-backup.js";
+import { RotinaDePulso } from "./infra/pulso/rotina-de-pulso.js";
 import type { Notificador } from "./dominio/portas/notificador.js";
 import type { RepositorioDoSalao } from "./dominio/portas/repositorio-do-salao.js";
 import { MotorGerente } from "./dominio/servicos/motor-gerente.js";
@@ -25,6 +26,9 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_BACKUP_HORAS    | 6      | De quantas em quantas horas copiar              |
  * | SALAO_BACKUP_COPIAS   | 28     | Quantas cópias guardar (28 × 6h ≈ uma semana)   |
  * | SALAO_BACKUP_ESPELHO  | —      | Segunda pasta das cópias; aponte para um OneDrive |
+ * | SALAO_PULSO_URL       | —      | Para onde avisar que a casa está funcionando     |
+ * | SALAO_PULSO_MINUTOS   | 5      | De quantos em quantos minutos avisar             |
+ * | SALAO_CASA            | —      | Nome desta casa, para quem recebe o pulso        |
  */
 
 /**
@@ -153,6 +157,48 @@ function montarNotificador(): Notificador {
     return new NotificadorDeLog(registrador);
 }
 
+/**
+ * "Sistema online": o pulso que diz que esta casa está funcionando.
+ *
+ * Desligado sem `SALAO_PULSO_URL`. Aponte para um serviço que alerte quando o
+ * sinal **para** de chegar — é o silêncio que interessa, não a mensagem.
+ *
+ * Vai junto a saúde do backup, porque as duas perguntas que se faz de longe são
+ * "a casa está de pé?" e "a casa está copiando o banco?". Um salão no ar que
+ * parou de copiar há três dias responde igualzinho a um saudável.
+ *
+ * **Contagens e horários, nada mais.** Nome e telefone de quem jantou aqui não
+ * saem da casa: quem recebe o pulso é um terceiro.
+ */
+function montarPulso(estadoDoBackup: () => EstadoDoBackup | null): RotinaDePulso | null {
+    const url = process.env["SALAO_PULSO_URL"];
+    if (url === undefined || url.trim() === "") {
+        return null;
+    }
+
+    return new RotinaDePulso({
+        url: url.trim(),
+        aCadaMinutos: inteiroDoAmbiente("SALAO_PULSO_MINUTOS", 5, 1),
+        casa: process.env["SALAO_CASA"],
+        registrador,
+        resumo: () => {
+            const backup = estadoDoBackup();
+            if (backup === null) {
+                return { backup: null };
+            }
+            // Sem o caminho do arquivo: quem monitora não precisa saber a
+            // estrutura de pastas da casa, e o que não sai não vaza.
+            return {
+                backup: {
+                    ultimaCopiaEm: backup.ultimaCopiaEm,
+                    falhasSeguidas: backup.falhasSeguidas,
+                    espelhoEm: backup.espelho?.ultimaCopiaEm ?? null
+                }
+            };
+        }
+    });
+}
+
 function iniciar(): void {
     const porta = lerPorta();
     const autenticador = lerAutenticacao(registrador);
@@ -160,11 +206,14 @@ function iniciar(): void {
     const notificador = montarNotificador();
 
     const motor = new MotorGerente(armazenamento.repositorio, { notificador, registrador });
+    const estadoDoBackup = (): EstadoDoBackup | null => armazenamento.backup?.estado() ?? null;
+    const pulso = montarPulso(estadoDoBackup);
 
     const servidor = criarServidor(motor, {
         autenticador,
         registrador,
-        backup: () => armazenamento.backup?.estado() ?? null
+        backup: estadoDoBackup,
+        pulso: () => pulso?.estado() ?? null
     });
 
     servidor.listen(porta, () => {
@@ -177,6 +226,9 @@ function iniciar(): void {
         // Depois de a porta abrir: a primeira cópia não pode atrasar o salão
         // a subir, e se a pasta estiver ruim o serviço atende mesmo assim.
         armazenamento.backup?.iniciar();
+
+        // O primeiro pulso fecha o alerta que a queda anterior abriu.
+        pulso?.iniciar();
     });
 
     servidor.on("error", (erro: unknown) => {
@@ -197,6 +249,7 @@ function iniciar(): void {
 
         registrador.info("encerrando", { motivo });
         armazenamento.backup?.parar();
+        pulso?.parar();
 
         servidor.close(() => {
             // Uma última cópia antes de fechar, quando dá: num encerramento

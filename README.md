@@ -45,7 +45,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 344 testes |
+| `npm test` | 357 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -68,6 +68,9 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_BACKUP_HORAS` | `6` | De quantas em quantas horas copiar |
 | `SALAO_BACKUP_COPIAS` | `28` | Quantas cópias guardar — 28 × 6 h ≈ uma semana |
 | `SALAO_BACKUP_ESPELHO` | — | Segunda pasta que recebe cópia de cada cópia. Aponte para o OneDrive |
+| `SALAO_PULSO_URL` | — | Para onde avisar que a casa está funcionando. Sem ela, sem pulso |
+| `SALAO_PULSO_MINUTOS` | `5` | De quantos em quantos minutos avisar |
+| `SALAO_CASA` | — | Nome desta casa, para quem recebe o pulso distinguir |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
 | `PAINEL_SENHA_ARQUIVO` | `painel-senha.json` na raiz | Onde a senha do painel fica guardada, como hash |
@@ -202,6 +205,42 @@ parar a tarefa no Agendador encerra o processo sem entregar sinal nenhum, e o c�
 encerramento não chega a rodar. Quem garante é a cópia periódica. Na prática: a cópia mais
 recente pode ser de até seis horas atrás, e é por isso que o intervalo é a variável que
 vale a pena mexer (`SALAO_BACKUP_HORAS`) numa casa de movimento.
+
+### Sistema online
+
+Quem vende o salão precisa saber que a casa X está quieta desde ontem **sem esperar o telefone
+tocar no sábado**. O salão já se levanta sozinho quando cai; o que faltava era alguém ficar
+sabendo.
+
+```
+SALAO_PULSO_URL=https://seu-monitor/ping/cantina-do-ze
+SALAO_CASA=cantina-do-ze
+```
+
+A cada cinco minutos a casa manda um POST dizendo que está funcionando. **O pulso sai, nada
+entra** — perguntar de fora exigiria que cada balcão tivesse endereço alcançável, o que um PC
+atrás de NAT não tem.
+
+Quem recebe fica de fora de propósito: aponte para um serviço de monitoramento pronto — dos
+que alertam quando o sinal **para** de chegar — e não há servidor nenhum para escrever. Se um
+dia quiser o seu próprio painel de casas, troque a URL e o salão nem percebe.
+
+Vai junto a saúde do backup, porque as duas perguntas que se faz de longe são "a casa está de
+pé?" e "a casa está copiando o banco?". Um salão no ar que parou de copiar há três dias
+responde igualzinho a um saudável.
+
+```json
+{"casa":"cantina-do-ze","momento":"2026-09-15T01:37:12.121Z",
+ "backup":{"ultimaCopiaEm":"2026-09-15T01:37:12.087Z","falhasSeguidas":0,"espelhoEm":null}}
+```
+
+**Nenhum dado de cliente atravessa.** Nome, telefone e o diário ficam na casa; daqui saem
+contagens e horários, e mais nada — nem o caminho dos arquivos. Quem recebe o pulso é um
+terceiro, e isso não é detalhe de implementação: é o que permite apontar o pulso para um
+serviço de fora sem mandar junto dado pessoal de quem jantou ali. Há teste travando o formato.
+
+Pulso que não chega **não derruba nada**: internet fora é falha de pulso, não de atendimento.
+Fica em `/saude`, junto com o backup.
 
 ### Restaurar
 

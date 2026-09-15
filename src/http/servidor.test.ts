@@ -85,7 +85,7 @@ describe("API HTTP", () => {
             // Sem rotina de backup ligada — salão em memória, por exemplo — a
             // rota diz `null` em vez de omitir o campo: quem monitora distingue
             // "não há backup configurado" de "a resposta é de uma versão velha".
-            assert.deepEqual(json, { status: "ok", backup: null });
+            assert.deepEqual(json, { status: "ok", backup: null, pulso: null });
         });
 
         it("saúde conta como anda o backup", async () => {
@@ -102,6 +102,7 @@ describe("API HTTP", () => {
                 assert.equal(status, 200);
                 assert.deepEqual(json, {
                     status: "ok",
+                    pulso: null,
                     backup: {
                         ultimaCopiaEm: "2026-09-14T20:00:00.000Z",
                         ultimaFalha: "disco cheio",
