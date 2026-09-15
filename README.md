@@ -514,9 +514,10 @@ Duas regras que o `MotorGerente` já respeita: o aviso sai **depois** da transa�
 falha de aviso **não** desfaz a alocação. A mesa já é daquele cliente; provedor fora do ar não
 pode cancelar o atendimento.
 
-O aviso vai para o **log** (`NotificadorDeLog`). Não há provedor de mensagem ligado: para
-mandar SMS, WhatsApp ou qualquer outra coisa, implemente `Notificador` e entregue a
-implementação no lugar dela — o domínio não muda, é para isso que a porta existe.
+**Não há API de notificação implementada.** O aviso vai para o **log**
+(`NotificadorDeLog`) e quem chama o cliente é o maître. Avisar por mensagem depende de
+contratar um serviço de terceiros — WhatsApp, SMS ou outro — e implementar `Notificador` com
+ele, sem tocar no domínio: é para isso que a porta existe.
 
 Se for ligar um provedor no Brasil, dois obstáculos que valem saber de antemão:
 
@@ -529,24 +530,6 @@ Se for ligar um provedor no Brasil, dois obstáculos que valem saber de antemão
   [template pré-aprovado](https://www.twilio.com/docs/whatsapp/tutorial/send-whatsapp-notification-messages-templates)
   para essas. "Sua mesa está pronta" é exatamente esse caso, então o adaptador precisará
   mandar o identificador do template e as variáveis, não texto livre.
-
-Um adaptador de WhatsApp pela Cloud API chegou a existir aqui e **foi retirado** — investir
-numa integração paga antes de haver quem compre o software não se justificava. O código está
-no histórico do git, e volta com um `git revert` do commit que o removeu. O que a pesquisa
-apurou, para não ser refeita:
-
-- **Não há API oficial gratuita** para mensagem iniciada pela empresa. O template de utilidade
-  para o Brasil sai por volta de US$ 0,008 — uma casa que avisa 50 grupos por noite gasta algo
-  como US$ 12 por mês ([tabela da Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing)).
-- **A janela gratuita de 24 h não está ao alcance desta arquitetura.** Ela depende de o cliente
-  mandar mensagem primeiro, e receber mensagem exige um webhook que a Meta alcance — um PC de
-  balcão atrás de NAT não tem endereço público. Precisaria de algo na nuvem.
-- **E ela deixa de ser gratuita.** A partir de 1º de outubro de 2026 a Meta passa a cobrar
-  também dentro da janela de 24 h, com franquia de 1.000 mensagens de serviço por mês por
-  número.
-- **As bibliotecas não oficiais** (whatsapp-web.js, Baileys) violam os termos, e o que se perde
-  quando o número é banido é o WhatsApp do restaurante — o número que os clientes têm na
-  agenda. Num software vendido para terceiros, não é risco que caiba a nós assumir por eles.
 
 Vale para qualquer forma de avisar, não só mensagem: um **painel de LED** mostrando a vez da
 fila é outra implementação de `Notificador`, ou uma tela a mais lendo `GET /fila`. A porta não
