@@ -187,6 +187,19 @@ function rotas(
             return { status: 201, corpo: criada };
         }),
 
+        /**
+         * O direito ao esquecimento (LGPD): tira nome e telefone deste cliente
+         * do diário. Os números do relatório ficam — o atendimento aconteceu.
+         *
+         * `DELETE` e não `POST` porque o efeito é apagar, e responde 200 mesmo
+         * quando não havia nada: quem pede para ser esquecido não precisa
+         * descobrir, pela resposta, se estava ou não no cadastro.
+         */
+        rota("DELETE", "/clientes/:telefone", async ({ parametros }) => ({
+            status: 200,
+            corpo: await motor.esquecerCliente(parametros["telefone"] ?? "")
+        })),
+
         /** Tira a mesa da planta. Mesa ocupada ou já chamada não sai. */
         rota("DELETE", "/mesas/:id", async ({ parametros }) => ({
             status: 200,

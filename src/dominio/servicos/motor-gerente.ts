@@ -109,6 +109,24 @@ export class MotorGerente {
         return this.#repositorio.transacao((salao) => salao.removerMesa(mesaId));
     }
 
+    /**
+     * O direito ao esquecimento: tira nome e telefone deste cliente do diário.
+     *
+     * Não passa por `transacao` porque não mexe no salão — quem está sentado
+     * agora continua sentado, e o relatório continua contando o atendimento.
+     * O que sai é só o que identifica a pessoa.
+     */
+    async esquecerCliente(telefone: string): Promise<{ eventosAlterados: number }> {
+        const eventosAlterados = await this.#repositorio.esquecerTelefone(telefone);
+        this.#registrador.info("cliente_esquecido", { eventosAlterados });
+        return { eventosAlterados };
+    }
+
+    /** Anonimiza o diário mais velho que o limite. Devolve quantos mudaram. */
+    async anonimizarDiarioAte(limite: Date): Promise<number> {
+        return this.#repositorio.anonimizarEventosAte(limite);
+    }
+
     async consultarMesa(mesaId: string): Promise<InfoMesa | undefined> {
         return this.#repositorio.consulta((salao) => salao.consultarMesa(mesaId));
     }

@@ -397,5 +397,129 @@ export function verificarContratoDoRepositorio(
                 fechar();
             }
         });
+
+        describe("dado pessoal no diário", () => {
+            /** Uma noite: dois clientes sentam e um sai. */
+            async function umaNoite(repositorio: RepositorioParaTeste["repositorio"]): Promise<void> {
+                await repositorio.transacao((salao) => {
+                    salao.receberCliente(cliente("Ana", 2, "+5511900000001"));
+                    salao.receberCliente(cliente("Bruno", 2, "+5511900000002"));
+                });
+            }
+
+            it("anonimizar tira nome e telefone dos eventos antigos", async () => {
+                const relogio = new RelogioDeTeste();
+                const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+                try {
+                    await umaNoite(repositorio);
+                    relogio.avancarSegundos(60);
+
+                    const alterados = await repositorio.anonimizarEventosAte(relogio.agora());
+                    assert.ok(alterados > 0, "devia ter alterado algum evento");
+
+                    const eventos = await repositorio.eventos(periodoInteiro());
+                    for (const evento of eventos) {
+                        assert.equal(evento.nome, null, `sobrou nome em ${evento.tipo}`);
+                        assert.equal(evento.telefone, null, `sobrou telefone em ${evento.tipo}`);
+                    }
+                } finally {
+                    fechar();
+                }
+            });
+
+            it("o que o relatório usa sobrevive à anonimização", async () => {
+                // É o ponto todo: anonimizar não pode custar nenhum número.
+                const relogio = new RelogioDeTeste();
+                const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+                try {
+                    await umaNoite(repositorio);
+                    relogio.avancarSegundos(60);
+
+                    const antes = await repositorio.eventos(periodoInteiro());
+                    await repositorio.anonimizarEventosAte(relogio.agora());
+                    const depois = await repositorio.eventos(periodoInteiro());
+
+                    assert.equal(depois.length, antes.length, "nenhuma linha podia sumir");
+                    for (const [i, evento] of depois.entries()) {
+                        const original = antes[i];
+                        assert.equal(evento.tipo, original?.tipo);
+                        assert.equal(evento.momento, original?.momento);
+                        assert.equal(evento.mesaNumero, original?.mesaNumero);
+                        assert.equal(evento.capacidade, original?.capacidade);
+                        assert.equal(evento.pessoas, original?.pessoas);
+                        assert.equal(evento.esperaEmSegundos, original?.esperaEmSegundos);
+                    }
+                } finally {
+                    fechar();
+                }
+            });
+
+            it("não toca no que é mais novo que o limite", async () => {
+                const relogio = new RelogioDeTeste();
+                const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+                try {
+                    const corte = relogio.agora();
+                    relogio.avancarSegundos(60);
+                    await umaNoite(repositorio);
+
+                    assert.equal(await repositorio.anonimizarEventosAte(corte), 0);
+
+                    const eventos = await repositorio.eventos(periodoInteiro());
+                    assert.ok(
+                        eventos.some((evento) => evento.nome !== null),
+                        "o que é recente tinha de ter ficado"
+                    );
+                } finally {
+                    fechar();
+                }
+            });
+
+            it("rodar de novo não altera nada, porque já não há o que anonimizar", async () => {
+                const relogio = new RelogioDeTeste();
+                const { repositorio, fechar } = criar({ mesas: duasMesas(), relogio });
+                try {
+                    await umaNoite(repositorio);
+                    relogio.avancarSegundos(60);
+
+                    await repositorio.anonimizarEventosAte(relogio.agora());
+                    assert.equal(await repositorio.anonimizarEventosAte(relogio.agora()), 0);
+                } finally {
+                    fechar();
+                }
+            });
+
+            it("esquecer um telefone só apaga o dele", async () => {
+                const { repositorio, fechar } = criar({ mesas: duasMesas() });
+                try {
+                    await umaNoite(repositorio);
+
+                    const alterados = await repositorio.esquecerTelefone("+5511900000001");
+                    assert.ok(alterados > 0);
+
+                    const eventos = await repositorio.eventos(periodoInteiro());
+                    assert.equal(
+                        eventos.some((evento) => evento.telefone === "+5511900000001"),
+                        false,
+                        "o telefone pedido devia ter sumido"
+                    );
+                    assert.ok(
+                        eventos.some((evento) => evento.telefone === "+5511900000002"),
+                        "o do outro cliente não podia ter sumido junto"
+                    );
+                } finally {
+                    fechar();
+                }
+            });
+
+            it("esquecer telefone que não existe não altera nada", async () => {
+                const { repositorio, fechar } = criar({ mesas: duasMesas() });
+                try {
+                    await umaNoite(repositorio);
+                    assert.equal(await repositorio.esquecerTelefone("+5511999999999"), 0);
+                } finally {
+                    fechar();
+                }
+            });
+        });
     });
 }

@@ -45,7 +45,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
 | `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 357 testes |
+| `npm test` | 369 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
@@ -71,6 +71,7 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_PULSO_URL` | — | Para onde avisar que a casa está funcionando. Sem ela, sem pulso |
 | `SALAO_PULSO_MINUTOS` | `5` | De quantos em quantos minutos avisar |
 | `SALAO_CASA` | — | Nome desta casa, para quem recebe o pulso distinguir |
+| `SALAO_RETENCAO_DIAS` | `90` | Depois disso, nome e telefone saem do diário. `0` desliga |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
 | `PAINEL_SENHA_ARQUIVO` | `painel-senha.json` na raiz | Onde a senha do painel fica guardada, como hash |
@@ -206,6 +207,41 @@ encerramento não chega a rodar. Quem garante é a cópia periódica. Na prátic
 recente pode ser de até seis horas atrás, e é por isso que o intervalo é a variável que
 vale a pena mexer (`SALAO_BACKUP_HORAS`) numa casa de movimento.
 
+### Dado pessoal e LGPD
+
+O salão guarda nome e telefone de quem chega — é o telefone que serve de identidade, e sem ele
+não dá para impedir que a mesma pessoa esteja em duas mesas. Num software vendido a
+estabelecimentos, esse dado é de clientes de terceiros, e a casa responde por ele.
+
+**O diário é o registro do que aconteceu, não um cadastro de clientes.** Passado o tempo em que
+o nome serve para alguma coisa — conferir uma reclamação, entender uma noite —, ele vira dado
+guardado sem motivo. Por isso o expurgo automático: eventos com mais de `SALAO_RETENCAO_DIAS`
+têm nome e telefone anulados, ao subir e uma vez por dia.
+
+**Anonimizar não custa nenhum número.** O esquema separa o que identifica do que conta: mesa,
+capacidade, pessoas, espera e permanência ficam. O relatório de seis meses atrás sai
+igualzinho, só sem os nomes. É `UPDATE`, nunca `DELETE` — apagar a linha mudaria o passado dos
+relatórios, que é o que o diário existe para não deixar acontecer.
+
+Para quem pedir para ser esquecido:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $SALAO_TOKEN"   "http://localhost:3000/clientes/%2B5511999998888"
+```
+
+Tira o dado daquele telefone do diário inteiro, sem olhar data, e responde 200 mesmo quando
+não havia nada — quem pede para ser esquecido não precisa descobrir pela resposta se estava
+ou não guardado. Não mexe em quem está sentado ou na fila agora: pedir para ser esquecido no
+meio do próprio jantar é caso para o maître, não para o banco.
+
+O pulso do "Sistema online" também não leva dado pessoal nenhum para fora — ver a seção
+abaixo.
+
+**O que isto não é.** São os mecanismos técnicos: minimização, retenção e eliminação a
+pedido. Conformidade também exige aviso de privacidade ao cliente do restaurante, base legal
+declarada, e contrato entre quem vende o software e a casa que o opera — quem é controlador e
+quem é operador. **Isso é trabalho de advogado, e não está feito aqui.**
+
 ### Sistema online
 
 Quem vende o salão precisa saber que a casa X está quieta desde ontem **sem esperar o telefone
@@ -293,6 +329,7 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 | `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
 | `GET` | `/chegadas/previa` | Onde esse grupo iria parar, sem mudar nada — `?pessoas=N&telefone=<opcional>` |
 | `DELETE` | `/fila/:telefone` | Desistência: sai da fila |
+| `DELETE` | `/clientes/:telefone` | **Esquecimento (LGPD)**: tira nome e telefone do diário |
 | `POST` | `/mesas/:id/reserva` | O anfitrião senta alguém numa mesa escolhida a dedo |
 | `DELETE` | `/mesas/:id/reserva` | Cancela a reserva; a mesa vai para o próximo da fila que couber |
 | `POST` | `/mesas/:id/ocupacao` | O grupo chegou à mesa e sentou |

@@ -29,6 +29,7 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_PULSO_URL       | —      | Para onde avisar que a casa está funcionando     |
  * | SALAO_PULSO_MINUTOS   | 5      | De quantos em quantos minutos avisar             |
  * | SALAO_CASA            | —      | Nome desta casa, para quem recebe o pulso        |
+ * | SALAO_RETENCAO_DIAS   | 90     | Depois disso, nome e telefone saem do diário     |
  */
 
 /**
@@ -199,6 +200,59 @@ function montarPulso(estadoDoBackup: () => EstadoDoBackup | null): RotinaDePulso
     });
 }
 
+/**
+ * Expurgo do dado pessoal antigo (LGPD).
+ *
+ * O diário é o registro do que aconteceu, **não um cadastro de clientes**.
+ * Passado o tempo em que o nome serve para alguma coisa — conferir uma
+ * reclamação, entender uma noite —, ele vira dado pessoal guardado sem motivo,
+ * e a casa responde por isso.
+ *
+ * Anonimizar não custa nenhum número: mesa, capacidade, espera e permanência
+ * não identificam ninguém e continuam ali. O relatório de seis meses atrás sai
+ * igualzinho, só sem os nomes.
+ *
+ * Roda ao subir e uma vez por dia. `SALAO_RETENCAO_DIAS=0` desliga, para quem
+ * tiver motivo declarado para guardar — a decisão é da casa, não nossa.
+ */
+function montarExpurgo(motor: MotorGerente): { iniciar: () => void; parar: () => void } {
+    const dias = inteiroDoAmbiente("SALAO_RETENCAO_DIAS", 90, 0);
+    let agendado: ReturnType<typeof setInterval> | null = null;
+
+    const passar = async (): Promise<void> => {
+        const limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+        try {
+            const alterados = await motor.anonimizarDiarioAte(limite);
+            if (alterados > 0) {
+                registrador.info("diario_anonimizado", { eventos: alterados, antesDe: limite.toISOString() });
+            }
+        } catch (erro) {
+            // Expurgo que derruba o serviço troca um risco por outro pior.
+            registrador.erro("anonimizacao_falhou", { ...descreverErro(erro) });
+        }
+    };
+
+    return {
+        iniciar: () => {
+            if (dias === 0) {
+                registrador.aviso("retencao_sem_limite", {
+                    detalhe: "SALAO_RETENCAO_DIAS=0: nome e telefone ficam no diário indefinidamente."
+                });
+                return;
+            }
+            void passar();
+            agendado = setInterval(() => void passar(), 24 * 60 * 60 * 1000);
+            agendado.unref();
+        },
+        parar: () => {
+            if (agendado !== null) {
+                clearInterval(agendado);
+                agendado = null;
+            }
+        }
+    };
+}
+
 function iniciar(): void {
     const porta = lerPorta();
     const autenticador = lerAutenticacao(registrador);
@@ -208,6 +262,7 @@ function iniciar(): void {
     const motor = new MotorGerente(armazenamento.repositorio, { notificador, registrador });
     const estadoDoBackup = (): EstadoDoBackup | null => armazenamento.backup?.estado() ?? null;
     const pulso = montarPulso(estadoDoBackup);
+    const expurgo = montarExpurgo(motor);
 
     const servidor = criarServidor(motor, {
         autenticador,
@@ -229,6 +284,7 @@ function iniciar(): void {
 
         // O primeiro pulso fecha o alerta que a queda anterior abriu.
         pulso?.iniciar();
+        expurgo.iniciar();
     });
 
     servidor.on("error", (erro: unknown) => {
@@ -250,6 +306,7 @@ function iniciar(): void {
         registrador.info("encerrando", { motivo });
         armazenamento.backup?.parar();
         pulso?.parar();
+        expurgo.parar();
 
         servidor.close(() => {
             // Uma última cópia antes de fechar, quando dá: num encerramento

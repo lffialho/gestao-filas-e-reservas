@@ -41,4 +41,32 @@ export interface RepositorioDoSalao {
      * o que já aconteceu com ele.
      */
     eventos(periodo: Periodo): Promise<EventoDoSalao[]>;
+
+    /**
+     * Apaga nome e telefone dos eventos anteriores ao limite, mantendo o resto.
+     * Devolve quantos foram alterados.
+     *
+     * **O diário é o registro do que aconteceu, não um cadastro de clientes.**
+     * Passado o tempo em que o nome serve para alguma coisa — conferir uma
+     * reclamação, entender uma noite —, ele vira dado pessoal guardado sem
+     * motivo, e a casa responde por isso. O que o relatório usa continua ali:
+     * número da mesa, capacidade, espera e permanência não identificam
+     * ninguém, e é por isso que anonimizar não custa nenhum número.
+     *
+     * Anonimizar em vez de apagar a linha: apagar mudaria o passado dos
+     * relatórios, que é justamente o que o diário existe para não deixar
+     * acontecer.
+     */
+    anonimizarEventosAte(limite: Date): Promise<number>;
+
+    /**
+     * O direito ao esquecimento, para quando alguém pedir: tira nome e
+     * telefone deste telefone do diário inteiro, sem olhar data. Devolve
+     * quantos eventos foram alterados.
+     *
+     * Não mexe em quem está sentado ou na fila agora — pedir para ser
+     * esquecido no meio do próprio jantar é caso para o maître, não para o
+     * banco.
+     */
+    esquecerTelefone(telefone: string): Promise<number>;
 }

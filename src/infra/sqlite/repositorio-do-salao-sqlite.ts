@@ -356,6 +356,31 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
         this.#db.prepare("VACUUM INTO ?").run(destino);
     }
 
+    /**
+     * Anula nome e telefone dos eventos anteriores ao limite.
+     *
+     * `UPDATE` e não `DELETE`: apagar a linha mudaria o passado dos relatórios,
+     * que é o que o diário existe para não deixar acontecer. O que identifica
+     * sai; o que conta — mesa, capacidade, espera, permanência — fica.
+     */
+    async anonimizarEventosAte(limite: Date): Promise<number> {
+        const resultado = this.#db
+            .prepare(
+                `UPDATE eventos SET nome = NULL, telefone = NULL
+                  WHERE momento < ? AND (nome IS NOT NULL OR telefone IS NOT NULL)`
+            )
+            .run(limite.toISOString());
+        return Number(resultado.changes);
+    }
+
+    /** O direito ao esquecimento: este telefone some do diário inteiro. */
+    async esquecerTelefone(telefone: string): Promise<number> {
+        const resultado = this.#db
+            .prepare("UPDATE eventos SET nome = NULL, telefone = NULL WHERE telefone = ?")
+            .run(telefone);
+        return Number(resultado.changes);
+    }
+
     /** Fecha o banco. Chame ao encerrar o processo. */
     fechar(): void {
         this.#db.close();
