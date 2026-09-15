@@ -4,28 +4,13 @@ import type { Relogio } from "../../compartilhado/tempo/relogio.js";
 /**
  * Migrações do banco, numeradas e aplicadas em ordem.
  *
- * Por que isto existe: cada casa que compra o salão fica com o próprio arquivo,
- * e a partir da primeira instalação **não se controla mais qual versão roda
- * onde**. Uma casa pode passar meses sem atualizar e receber três mudanças de
- * esquema de uma vez. Sem um registro do que já foi aplicado, a única saída é
- * adivinhar pelo formato do banco — que é o que se fazia aqui antes, e não
- * escala além de duas ou três mudanças.
+ * Cada casa fica com o próprio arquivo, e uma que passe meses sem atualizar
+ * recebe várias mudanças de uma vez. O número já aplicado fica em
+ * `PRAGMA user_version`, no cabeçalho do arquivo, e é transacional.
  *
- * O número aplicado fica em `PRAGMA user_version`, que mora no cabeçalho do
- * arquivo e é transacional: ou a migração inteira valeu e a versão subiu, ou
- * nada valeu. Não há tabela de controle para criar, nem para o próprio
- * mecanismo precisar de migração.
- *
- * **Regras para escrever uma migração nova:**
- *
- * - acrescente ao fim da lista, com o número seguinte. Nunca edite uma que já
- *   saiu daqui: bancos lá fora já a aplicaram, e mudá-la faz os dois lados
- *   divergirem em silêncio;
- * - use SQL cru, nunca os métodos do repositório. O repositório acompanha o
- *   código de hoje; a migração precisa continuar fazendo o que fazia quando foi
- *   escrita, mesmo daqui a dez versões;
- * - migração que perde dado não é migração. Quando algo tiver de sair, mova
- *   antes — foi o que a 1 fez com a tabela `esperas`.
+ * Ao escrever uma nova: acrescente ao fim, com o número seguinte, e nunca edite
+ * uma que já saiu daqui — bancos lá fora já a aplicaram. Use SQL cru, não os
+ * métodos do repositório, que mudam com o tempo.
  */
 
 export interface Migracao {
@@ -185,7 +170,7 @@ function lerVersao(banco: DatabaseSync): number {
  * terceira de quatro falhar, as duas primeiras ficam e a versão gravada diz
  * isso. Abrir de novo retoma de onde parou, em vez de refazer tudo.
  *
- * **Banco mais novo que o código é recusado.** Voltar uma versão do programa é
+ * Banco mais novo que o código é recusado. Voltar uma versão do programa é
  * exatamente o que alguém faz quando uma atualização dá problema, e nesse
  * momento o banco já tem colunas que o código velho não conhece: seguir em
  * frente significaria gravar por cima com o formato antigo. Recusar com o

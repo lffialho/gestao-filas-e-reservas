@@ -9,7 +9,7 @@ import { el } from "./dom.js";
  * do cliente no domínio, não um detalhe de contato.
  *
  * Enquanto se digita, uma linha diz onde o grupo vai parar. Essa resposta vem
- * do **serviço**, de uma consulta que não muda nada: recalcular aqui "a menor
+ * do serviço, de uma consulta que não muda nada: recalcular aqui "a menor
  * mesa que serve, salvo se alguém na fila cabe nela" seria uma segunda cópia da
  * regra, e no dia em que a regra mudasse a tela passaria a prometer mesa que o
  * salão não daria. Quem decide entre mesa e fila é o salão, na prévia e na

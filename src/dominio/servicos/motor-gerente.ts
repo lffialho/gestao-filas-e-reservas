@@ -59,7 +59,7 @@ export class MotorGerente {
     }
 
     /**
-     * Avisa quem saiu da fila para a mesa. Chamado **depois** da transação
+     * Avisa quem saiu da fila para a mesa. Chamado depois da transação
      * confirmar, e nunca propaga erro: a mesa já é daquele cliente, então
      * provedor de aviso fora do ar não pode desfazer o atendimento.
      */

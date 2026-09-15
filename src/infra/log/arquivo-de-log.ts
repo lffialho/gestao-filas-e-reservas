@@ -5,22 +5,14 @@ import type { Nivel } from "../../compartilhado/log/registrador.js";
 /**
  * Guarda o log num arquivo, com rodízio.
  *
- * Rodando como tarefa do Agendador, **o log se perde inteiro**: ninguém vê o
- * stdout de um processo que sobe sozinho ao ligar o computador. Quando a casa
- * liga dizendo que algo deu errado às nove da noite de sábado, não há o que
- * olhar — e é justamente essa a hora em que se precisa olhar.
+ * Rodando como tarefa do Agendador o log vai para stdout e se perde: ninguém vê
+ * a saída de um processo que sobe sozinho ao ligar o computador.
  *
- * O rodízio existe porque log sem limite enche o disco do balcão, e disco cheio
- * derruba o salão junto. Quatro arquivos de 5 MB cobrem semanas de operação de
- * um restaurante e ocupam menos que uma foto.
+ * O rodízio existe porque log sem limite enche o disco do balcão. A escrita é
+ * síncrona porque o volume é de poucas linhas por segundo, e escrita assíncrona
+ * perderia linhas justo ao encerrar — quando o log mais importa.
  *
- * Escrita síncrona de propósito: o volume aqui é de poucas linhas por segundo —
- * um painel consultando a cada três segundos —, e escrita assíncrona traria
- * ordenação fora de ordem e linhas perdidas ao encerrar, que é exatamente
- * quando o log importa mais.
- *
- * **Nunca lança.** Log que derruba o serviço troca um problema pequeno por um
- * grande: o salão tem de continuar atendendo mesmo que o disco tenha enchido.
+ * Nunca lança: o salão tem de continuar atendendo mesmo com o disco cheio.
  */
 
 export interface OpcoesDoArquivoDeLog {

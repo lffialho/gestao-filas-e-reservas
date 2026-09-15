@@ -67,7 +67,7 @@ function lerPorta(): number {
 }
 
 /**
- * Sem token o serviço **não sobe**. Uma API que opera o salão aberta por
+ * Sem token o serviço não sobe. Uma API que opera o salão aberta por
  * omissão é o tipo de padrão que só se descobre errado depois; abrir tem de
  * ser escolha declarada.
  */
@@ -105,7 +105,7 @@ function inteiroDoAmbiente(nome: string, padrao: number, minimo: number): number
 /**
  * A rotina de cópias do banco.
  *
- * **Ligada por padrão.** Quem esquece a variável não pode ficar sem backup —
+ * Ligada por padrão. Quem esquece a variável não pode ficar sem backup —
  * esse é justamente o modo de falhar que a rotina existe para evitar. As cópias
  * vão para `backups/` ao lado do arquivo do banco, salvo indicação em
  * contrário, e `SALAO_BACKUP=0` desliga para quem realmente quiser.
@@ -157,7 +157,7 @@ function montarArmazenamento(): {
 /**
  * Para onde o log vai.
  *
- * Sempre para o stdout, que é o que se vê ao rodar na mão. Com
+ * Sempre para o stdout, que é onde se vê ao rodar na mão. Com
  * `SALAO_LOG_ARQUIVO`, também para um arquivo com rodízio — sem isso, rodando
  * como tarefa do Agendador o log se perde inteiro, e não há o que olhar quando
  * a casa liga dizendo que algo deu errado no sábado à noite.
@@ -206,13 +206,13 @@ function montarNotificador(): Notificador {
  * "Sistema online": o pulso que diz que esta casa está funcionando.
  *
  * Desligado sem `SALAO_PULSO_URL`. Aponte para um serviço que alerte quando o
- * sinal **para** de chegar — é o silêncio que interessa, não a mensagem.
+ * sinal para de chegar — é o silêncio que interessa, não a mensagem.
  *
  * Vai junto a saúde do backup, porque as duas perguntas que se faz de longe são
  * "a casa está de pé?" e "a casa está copiando o banco?". Um salão no ar que
  * parou de copiar há três dias responde igualzinho a um saudável.
  *
- * **Contagens e horários, nada mais.** Nome e telefone de quem jantou aqui não
+ * Contagens e horários, nada mais. Nome e telefone de quem jantou aqui não
  * saem da casa: quem recebe o pulso é um terceiro.
  */
 function montarPulso(estadoDoBackup: () => EstadoDoBackup | null): RotinaDePulso | null {
@@ -247,7 +247,7 @@ function montarPulso(estadoDoBackup: () => EstadoDoBackup | null): RotinaDePulso
 /**
  * Expurgo do dado pessoal antigo (LGPD).
  *
- * O diário é o registro do que aconteceu, **não um cadastro de clientes**.
+ * O diário é o registro do que aconteceu, não um cadastro de clientes.
  * Passado o tempo em que o nome serve para alguma coisa — conferir uma
  * reclamação, entender uma noite —, ele vira dado pessoal guardado sem motivo,
  * e a casa responde por isso.
@@ -356,7 +356,7 @@ function iniciar(): void {
             // Uma última cópia antes de fechar, quando dá: num encerramento
             // gracioso ela é a mais recente que existe.
             //
-            // **No Windows quase nunca dá.** Parar a tarefa no Agendador, ou
+            // No Windows quase nunca dá. Parar a tarefa no Agendador, ou
             // qualquer supervisor, encerra o processo sem entregar sinal
             // nenhum — medido: SIGTERM e SIGINT matam sem passar por aqui, e
             // SIGBREAK e SIGHUP nem matam. Então esta cópia é um bônus do

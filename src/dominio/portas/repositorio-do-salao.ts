@@ -8,7 +8,7 @@ import type { EventoDoSalao, Periodo } from "../eventos.js";
  * entrega à operação, e persiste o resultado — tudo ou nada. Se a operação
  * lançar, nada é gravado.
  *
- * A operação é **síncrona** de propósito: isso impede que E/S entre no meio de
+ * A operação é síncrona de propósito: isso impede que E/S entre no meio de
  * uma decisão de alocação, que é justamente onde mesas e fila precisam mudar
  * juntas. Quem faz E/S é o repositório, antes e depois.
  *
@@ -46,7 +46,7 @@ export interface RepositorioDoSalao {
      * Apaga nome e telefone dos eventos anteriores ao limite, mantendo o resto.
      * Devolve quantos foram alterados.
      *
-     * **O diário é o registro do que aconteceu, não um cadastro de clientes.**
+     * O diário é o registro do que aconteceu, não um cadastro de clientes.
      * Passado o tempo em que o nome serve para alguma coisa — conferir uma
      * reclamação, entender uma noite —, ele vira dado pessoal guardado sem
      * motivo, e a casa responde por isso. O que o relatório usa continua ali:

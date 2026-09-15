@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
  *
  *   node ferramentas/pacote-de-suporte.mjs
  *
- * **Não leva dado de cliente.** O log já nasce mascarado — nome e telefone saem
+ * Não leva dado de cliente. O log já nasce mascarado — nome e telefone saem
  * mascarados de quem os escreve —, e o que este script acrescenta são versões,
  * caminhos e estados. O `.env` entra só com os nomes das variáveis, nunca com
  * os valores: o token e a senha do painel não podem viajar num anexo de e-mail.

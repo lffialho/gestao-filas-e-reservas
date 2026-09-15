@@ -166,7 +166,7 @@ export class Salao {
 
     /**
      * O que aconteceu nesta operação, ainda não persistido. Quem chama é o
-     * repositório: ele grava os eventos na **mesma transação** que o estado e
+     * repositório: ele grava os eventos na mesma transação que o estado e
      * só então limpa. Gravar depois deixaria o diário contar um atendimento
      * que o rollback desfez.
      */
@@ -513,7 +513,7 @@ export class Salao {
     /**
      * Coloca o cliente numa mesa escolhida a dedo. Continua valendo a ordem de
      * chegada: se alguém na fila cabe nessa mesa, só ele pode recebê-la — e,
-     * nesse caso, quem senta é **o cliente que já estava na fila**, não o que
+     * nesse caso, quem senta é o cliente que já estava na fila, não o que
      * veio no pedido. Casar só pelo telefone e sentar o objeto recebido deixava
      * um erro de digitação do anfitrião tirar uma pessoa da fila e pôr outra no
      * lugar dela, além de perder a hora de chegada original.

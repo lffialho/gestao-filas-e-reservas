@@ -132,7 +132,7 @@ function rotas(
         /**
          * Saúde do serviço — e do backup.
          *
-         * O backup entra aqui porque **falha de backup é silenciosa**: o salão
+         * O backup entra aqui porque falha de backup é silenciosa: o salão
          * segue atendendo, ninguém percebe, e a casa descobre no dia em que
          * precisa da cópia. Quem monitora olha uma rota só.
          */

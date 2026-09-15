@@ -15,7 +15,7 @@ import {
  * uma escrita levam junto a noite inteira e todo o histórico — e é para esse
  * risco, e não para outro, que esta rotina serve.
  *
- * **Uma cópia no mesmo disco não protege contra o disco morrer.** Ela protege
+ * Uma cópia no mesmo disco não protege contra o disco morrer. Ela protege
  * contra corrupção, contra apagar sem querer e contra erro de operação, que é a
  * maioria dos casos. Para o resto, aponte um OneDrive, um Google Drive ou um
  * pendrive para a pasta das cópias: são arquivos comuns, e qualquer sincronismo
@@ -33,8 +33,8 @@ export interface OpcoesDaRotina {
     /** Quantas cópias guardar; as mais antigas são apagadas. */
     copias: number;
     /**
-     * Uma segunda pasta que recebe cópia de cada cópia. **É o que tira o backup
-     * do disco que pode morrer.**
+     * Uma segunda pasta que recebe cópia de cada cópia. É o que tira o backup
+     * do disco que pode morrer.
      *
      * Aponte para a pasta local de um OneDrive, de um Google Drive ou para um
      * pendrive: são arquivos comuns, e quem sincroniza é o programa que já está
@@ -51,8 +51,8 @@ export interface OpcoesDaRotina {
 /**
  * Como foi a última tentativa de cópia.
  *
- * Existe para ser mostrado, não só registrado. **Backup que falha em silêncio é
- * o desastre clássico**: a casa descobre que não tinha cópia no dia em que
+ * Existe para ser mostrado, não só registrado. Backup que falha em silêncio é
+ * o desastre clássico: a casa descobre que não tinha cópia no dia em que
  * precisa dela. Por isso isto sai em `/saude`, onde dá para olhar.
  */
 export interface EstadoDoBackup {
@@ -186,7 +186,7 @@ export class RotinaDeBackup {
     /**
      * Copia a cópia para a segunda pasta — a que tira o backup deste disco.
      *
-     * Erro aqui **não** derruba a cópia local: pendrive fora da porta, OneDrive
+     * Erro aqui não derruba a cópia local: pendrive fora da porta, OneDrive
      * desconectado ou rede caída não podem deixar o restaurante sem backup
      * nenhum. Fica registrado como aviso e aparece em `estado()`, que é onde
      * alguém tem chance de notar.
@@ -198,7 +198,7 @@ export class RotinaDeBackup {
         }
 
         try {
-            // A pasta de destino é criada; a **de cima, não**.
+            // A pasta de destino é criada; a de cima, não.
             //
             // Com `recursive`, um caminho digitado errado — ou escrito no
             // formato de outro sistema, como `/c/Users/...` — faz o Windows
@@ -206,7 +206,7 @@ export class RotinaDeBackup {
             // A cópia "dá certo", e o dono segue achando que tem backup no
             // OneDrive enquanto ele vai para um canto que ninguém sincroniza.
             // Exigir que a pasta de cima já exista transforma isso num erro
-            // visível, que é o que se quer de um caminho errado.
+            // visível, que é o desejável num caminho errado.
             const acima = dirname(espelho);
             if (!existsSync(acima)) {
                 throw new Error(

@@ -8,22 +8,13 @@ import {
 /**
  * "Sistema online": a casa avisa, de tempos em tempos, que está funcionando.
  *
- * Serve a quem **vende** o salão, não a quem opera. O salão já se levanta
- * sozinho quando cai; o que falta é alguém saber que a casa X está quieta desde
- * ontem sem esperar o telefone tocar no sábado.
+ * Serve a quem vende o salão, não a quem opera. O pulso sai e nada entra —
+ * perguntar de fora exigiria que cada balcão tivesse endereço alcançável, o que
+ * um PC atrás de NAT não tem. Quem recebe fica de fora: aponte para um serviço
+ * que alerte quando o sinal para de chegar.
  *
- * **O pulso sai, nada entra.** Perguntar de fora exigiria que cada balcão
- * tivesse endereço alcançável, o que um PC atrás de NAT não tem. Mandar de
- * dentro é só HTTPS de saída, que funciona em qualquer casa com internet.
- *
- * Quem recebe fica de fora de propósito: um serviço de monitoramento pronto —
- * dos que alertam quando o sinal **para** de chegar — resolve sem escrever
- * servidor nenhum. Trocar o destino é trocar uma variável.
- *
- * **Nenhum dado de cliente atravessa.** Nome, telefone e o diário ficam na
- * casa; daqui saem contagens e horários, e mais nada. Isso não é detalhe de
- * implementação: é o que permite apontar o pulso para um serviço de terceiro
- * sem mandar para fora dado pessoal de quem jantou ali.
+ * Nenhum dado de cliente atravessa: saem contagens e horários, e mais nada. É o
+ * que permite mandar o pulso para um serviço de terceiro.
  */
 
 export interface OpcoesDoPulso {

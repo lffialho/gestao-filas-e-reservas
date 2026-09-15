@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 /**
  * Confere uma instalação inteira, de fora, como um cliente faria.
  *
- * A suíte de `npm test` prova o domínio; isto prova a **instalação**: HTTP de
+ * A suíte de `npm test` prova o domínio; isto prova a instalação: HTTP de
  * verdade, token de verdade, SQLite de verdade, painel de verdade, os dois
  * processos no ar. É o que se roda depois de instalar numa casa nova, antes de
  * entregar a chave — e o que se pede para rodar quando alguém liga dizendo que
@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
  *
  *   node ferramentas/conferir-instalacao.mjs --pode-escrever
  *
- * **Ele escreve no salão**: senta gente, põe na fila, cadastra e remove mesa.
+ * Ele escreve no salão: senta gente, põe na fila, cadastra e remove mesa.
  * Por isso só roda com `--pode-escrever` e só num salão em repouso — nenhuma
  * mesa ocupada, ninguém na fila. Num salão em serviço ele se recusa, porque
  * "teste que atrapalha o sábado" é pior do que teste nenhum.
