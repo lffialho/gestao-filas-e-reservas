@@ -1,6 +1,6 @@
 # Gestão de filas e reservas
 
-Backend para atendimento de salão de restaurante **por ordem de chegada**. Não há hora
+Backend para atendimento de salão de restaurante por ordem de chegada. Não há hora
 marcada: quem chega é sentado na menor mesa que o acomoda ou entra na fila, e quando uma
 mesa vira ela vai para o primeiro da fila que couber nela.
 
@@ -44,13 +44,14 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `npm start` | Sobe o serviço com as variáveis já no ambiente |
 | `npm run dev` | Serviço com recarga automática |
 | `npm run build` | Compila para `dist/` |
-| `npm run tudo:env` | Sobe **serviço e painel juntos**, lendo o `.env`, e levanta de novo o que cair |
-| `npm test` | 369 testes |
+| `npm run tudo:env` | Sobe serviço e painel juntos, lendo o `.env`, e levanta de novo o que cair |
+| `npm test` | 389 testes |
 | `npm run typecheck` | Só os tipos |
 | `npm run lint` | Biome: lint e formatação |
 | `npm run format` | Aplica as correções seguras do Biome |
 | `npm run verificar` | lint + typecheck + testes + build, o que o CI roda |
-| `npm run conferir:instalacao` | Confere uma **instalação no ar**, de fora — 59 verificações |
+| `npm run conferir:instalacao` | Confere uma instalação no ar, de fora — 59 verificações |
+| `npm run suporte` | Junta num arquivo só o que o suporte pergunta |
 | `npm run demo` | Roteiro de demonstração no terminal, sem HTTP |
 | `npm run web:build` | Compila o painel: servidor para `web/dist/`, navegador para `web/publico/js/` |
 | `npm run web:env` | Sobe o painel lendo o `.env` |
@@ -72,16 +73,21 @@ $env:SALAO_TOKEN = "um-token-secreto"; npm start
 | `SALAO_PULSO_MINUTOS` | `5` | De quantos em quantos minutos avisar |
 | `SALAO_CASA` | — | Nome desta casa, para quem recebe o pulso distinguir |
 | `SALAO_RETENCAO_DIAS` | `90` | Depois disso, nome e telefone saem do diário. `0` desliga |
+| `SALAO_LOG_ARQUIVO` | — | Guarda o log também num arquivo, com rodízio. Sem ela, só stdout |
 | `PORTA_WEB` | `5173` | Porta do painel, que roda num processo próprio |
 | `SALAO_API` | `http://127.0.0.1:3000` | Onde o painel procura a API |
 | `PAINEL_SENHA_ARQUIVO` | `painel-senha.json` na raiz | Onde a senha do painel fica guardada, como hash |
 | `PAINEL_SEM_SENHA` | — | `1` abre o painel a quem alcançar a porta. Só para desenvolvimento |
 
 A porta do serviço aparece em duas variáveis — `PORTA`, para ele, e `SALAO_API`, para o
-painel achá-lo — e o `.env.example` já traz as duas preenchidas. **Mudar uma sem mudar a
-outra** deixa o painel batendo numa porta vazia: ele sobe, a tela abre e nada carrega.
+painel achá-lo — e o `.env.example` já traz as duas preenchidas. Mudar uma sem mudar a
+outra deixa o painel batendo numa porta vazia: ele sobe, a tela abre e nada carrega.
 `npm run tudo` confere isso antes de subir e recusa com a mensagem certa; `npm start` e
 `npm run web`, rodados separados, não têm como conferir.
+
+O serviço não sobe sem `SALAO_TOKEN`. Uma API que opera o salão aberta por omissão é o tipo
+de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
+`SALAO_SEM_AUTENTICACAO=1`.
 
 ### Migrações
 
@@ -89,30 +95,18 @@ Bancos de versões anteriores se atualizam sozinhos ao abrir. As mudanças de es
 numeradas em `src/infra/sqlite/migracoes.ts` e aplicadas em ordem, uma transação cada; o
 número já aplicado mora em `PRAGMA user_version`, no cabeçalho do próprio arquivo.
 
-Isto existe por causa da venda: **a partir da primeira instalação não se controla mais qual
-versão roda em cada casa**, e uma casa que passe meses sem atualizar recebe várias mudanças
-de uma vez. Adivinhar pelo formato do banco — que era o que se fazia aqui — não passa de duas
-ou três mudanças.
+Isso importa porque, depois da primeira instalação, não se controla mais qual versão roda em
+cada casa — e uma que passe meses sem atualizar recebe várias mudanças de uma vez. Se alguma
+falhar no meio, nada dela vale e a versão não sobe; abrir de novo retoma de onde parou.
 
-Se uma migração falhar no meio, nada dela vale e a versão não sobe; as anteriores continuam
-valendo, e abrir de novo retoma de onde parou.
-
-**Banco mais novo que o programa é recusado, com o motivo escrito.** Voltar uma versão é
-justamente o que se faz quando uma atualização dá problema, e nesse momento o banco já tem o
-formato novo: seguir em frente seria gravar por cima com o formato antigo.
-
-**O serviço não sobe sem `SALAO_TOKEN`.** Uma API que opera o salão aberta por omissão é o
-tipo de padrão que só se descobre errado depois; abrir tem de ser escolha declarada, via
-`SALAO_SEM_AUTENTICACAO=1`.
-
-O jeito recomendado é pôr tudo no `.env` e usar `npm run start:env`. O arquivo fica fora do
-git, e o comando é o mesmo em qualquer sistema.
+Banco mais novo que o programa é recusado com o motivo escrito. Voltar uma versão é o que se
+faz quando uma atualização dá problema, e aí o banco já tem o formato novo: seguir em frente
+seria gravar por cima com o formato antigo.
 
 ## Instalar na máquina do balcão
 
-Rodar na mão, com `npm run tudo:env`, serve para testar. Numa casa que abre todo dia o salão
-tem de subir sozinho ao ligar o computador e voltar sozinho se cair — às 21h de sábado não
-há ninguém olhando para o terminal.
+Rodar na mão com `npm run tudo:env` serve para testar. Numa casa que abre todo dia o salão
+precisa subir sozinho ao ligar o computador e voltar sozinho se cair.
 
 ```powershell
 npm install
@@ -122,106 +116,100 @@ Copy-Item .env.example .env     # preencha SALAO_TOKEN e SALAO_BANCO
 powershell -ExecutionPolicy Bypass -File ferramentas\instalar-windows.ps1
 ```
 
-**Rode num PowerShell como administrador.** Tarefas na raiz do Agendador exigem elevação para
-serem criadas ou trocadas, e sem isso o script para na hora de registrar.
+Precisa ser um PowerShell como administrador: tarefas na raiz do Agendador exigem elevação.
 
 O script confere o que precisa estar pronto — Node 22 ou mais novo, os dois builds, o `.env`
-com token — e só então registra duas tarefas no Agendador do Windows, uma para o serviço e
-outra para o painel. Quem supervisiona é o próprio Windows, e não um script nosso: se ninguém
-estiver olhando, é o agendador que precisa levantar o serviço, e ele continua de pé mesmo que
-tudo o que escrevemos morra. Rodar de novo atualiza em vez de duplicar.
+com token — e registra duas tarefas, uma para o serviço e outra para o painel. Rodar de novo
+atualiza em vez de duplicar.
 
-Cada tarefa tem **dois gatilhos**, e a diferença importa. O primeiro sobe o salão ao entrar na
-conta. O segundo repete a cada dois minutos, para sempre, e é o que garante que ele volte.
+Cada tarefa tem dois gatilhos: um sobe o salão ao entrar na conta, outro repete a cada dois
+minutos. O segundo existe porque o reinício-em-falha do Agendador não bastou — matando o
+processo, a tarefa ficou em "Ready" e o salão passou 150 s fora do ar sem tentar subir.
+`RestartCount` cobre a tarefa que falha, não o processo que some. Com os dois gatilhos e
+`MultipleInstances = IgnoreNew`, o mesmo teste voltou sozinho em 123 s.
 
-A razão é medida, não teórica. Com só o reinício-em-falha do Agendador (`RestartCount`), matar
-o processo do serviço deixou a tarefa parada em "Ready" e **o salão ficou fora do ar por 150
-segundos sem nenhuma tentativa de subir** — até ser levantado à mão. Reinício-em-falha cobre a
-tarefa que falha, não o processo que some.
+Vale repetir isso depois de instalar: mate o `node` do serviço e confira que
+`http://localhost:3000/saude` responde de novo em até dois minutos.
 
-Com os dois gatilhos, o mesmo teste — matar o `node` do serviço e não tocar em mais nada —
-**trouxe o salão de volta sozinho em 123 segundos**, dentro da janela de dois minutos. Com
-`MultipleInstances = IgnoreNew` a repetição não faz nada enquanto o serviço está de pé.
+Terminada a instalação, abra `http://localhost:5173` e crie a senha do painel.
 
-Vale repetir esse teste depois de instalar, em cada casa: mate o `node` do serviço e confira
-que `http://localhost:3000/saude` volta a responder em até dois minutos. É o teste que separa
-"deve voltar sozinho" de "volta sozinho".
-
-Terminada a instalação, abra `http://localhost:5173` e **crie a senha do painel** — é a
-primeira tela. A mesma senha vale no tablet do balcão.
-
-`ferramentas\desinstalar-windows.ps1` tira as tarefas e **não toca no banco nem nas cópias**
-— desinstalar não pode ser o comando que apaga o histórico do restaurante.
+`ferramentas\desinstalar-windows.ps1` tira as tarefas e não toca no banco nem nas cópias.
 
 ### Conferir a instalação
 
-`npm test` prova o domínio. Isto prova a **instalação**: HTTP de verdade, token de verdade,
-SQLite de verdade, painel de verdade, os dois processos no ar.
+`npm test` prova o domínio. Isto prova a instalação: HTTP, token, SQLite e painel de verdade,
+com os dois processos no ar.
 
 ```bash
 npm run conferir:instalacao -- --pode-escrever
 ```
 
-São 59 verificações — autenticação, ordem de chegada, a fila ganhando de mesa vazia, os códigos
-de erro, o diário, e a senha do painel com cookie forjado e tudo. Rode depois de instalar numa
-casa nova, antes de entregar a chave, e quando alguém ligar dizendo que "não funciona": ele
-diz em qual das 57 parou.
+São 59 verificações — autenticação, ordem de chegada, a fila ganhando de mesa vazia, os
+códigos de erro, o diário e a senha do painel. Quando falha, diz em qual parou.
 
-**Ele escreve no salão**, e por isso pede `--pode-escrever` e se recusa a rodar com mesa
-ocupada ou gente na fila — teste que atrapalha o sábado é pior que teste nenhum. Os eventos
-que ele gera ficam no diário, como os de uma noite de verdade; para apagar, restaure a cópia
-anterior.
+Ele escreve no salão, então pede `--pode-escrever` e se recusa a rodar com mesa ocupada ou
+gente na fila. Os eventos que gera ficam no diário; para apagar, restaure a cópia anterior.
 
 ### As cópias do banco
 
-O estado do salão é o registro operacional da casa num arquivo só. Uma cópia é gravada ao
-subir e a cada seis horas, na pasta `backups/` ao lado do banco. Sai por
-`VACUUM INTO`, que é a forma que o próprio SQLite dá para copiar um banco **em uso**: a cópia
-vem de uma leitura transacional e nunca contém metade de uma operação. Copiar o `.db` por
-fora, com `Copy-Item`, pode pegá-lo no meio de uma escrita e gerar um arquivo que não abre —
-e seria justamente no sábado cheio que isso aconteceria.
+Uma cópia é gravada ao subir e a cada seis horas, em `backups/` ao lado do banco. Sai por
+`VACUUM INTO`, que é como o SQLite copia um banco em uso — a cópia vem de uma leitura
+transacional e nunca pega metade de uma operação. Copiar o `.db` por fora pode pegá-lo no
+meio de uma escrita e gerar um arquivo que não abre.
 
-**Uma cópia no mesmo disco não protege contra o disco morrer.** Ela cobre corrupção, engano
-e erro de operação, que é a maioria dos casos. Para o resto existe `SALAO_BACKUP_ESPELHO`: uma
-segunda pasta que recebe cópia de cada cópia, com a mesma poda das antigas.
+Cópia no mesmo disco não protege contra o disco morrer. Para isso existe
+`SALAO_BACKUP_ESPELHO`, uma segunda pasta que recebe cópia de cada cópia:
 
 ```
 SALAO_BACKUP_ESPELHO=C:\Users\voce\OneDrive\Salao
 ```
 
-Aponte para a pasta local de um OneDrive, de um Google Drive ou para um pendrive. Não há SDK
-de nuvem aqui e nem precisa haver: são arquivos comuns, e quem sincroniza é o programa que a
-casa já tem instalado. **É isto que transforma cópia local em backup de verdade.**
+Aponte para a pasta local do OneDrive, do Drive ou de um pendrive — são arquivos comuns e
+quem sincroniza é o programa que a casa já tem. Falhar no espelho não derruba a cópia local,
+mas aparece em `/saude`.
 
-Falhar no espelho **não** derruba a cópia local — pendrive fora da porta não pode deixar o
-restaurante sem backup nenhum —, mas aparece em `/saude`.
+A pasta do espelho é criada, a de cima não. Um caminho errado, ou no formato de outro sistema
+(`/c/Users/...`), o Windows resolve a partir da raiz do disco — com criação recursiva a
+árvore nasceria ali e a cópia daria "certo" num canto que ninguém sincroniza.
 
-A pasta do espelho é criada, **a de cima não**. Um caminho digitado errado, ou escrito no
-formato de outro sistema (`/c/Users/...`), o Windows resolve a partir da raiz do disco: com
-criação recursiva, a árvore inteira nasceria ali e a cópia daria "certo" num canto que
-ninguém sincroniza. Exigir que a pasta de cima exista transforma o engano num erro visível.
+O serviço tenta uma última cópia ao encerrar, mas não conte com ela no Windows: parar a tarefa
+no Agendador encerra o processo sem entregar sinal, e o código de encerramento não roda. Quem
+garante é a cópia periódica, então a mais recente pode ser de até seis horas atrás.
 
-O serviço ainda tenta uma última cópia ao encerrar, mas **não conte com ela no Windows**:
-parar a tarefa no Agendador encerra o processo sem entregar sinal nenhum, e o código de
-encerramento não chega a rodar. Quem garante é a cópia periódica. Na prática: a cópia mais
-recente pode ser de até seis horas atrás, e é por isso que o intervalo é a variável que
-vale a pena mexer (`SALAO_BACKUP_HORAS`) numa casa de movimento.
+### Restaurar
+
+Backup que nunca foi restaurado é um arquivo que se espera que sirva. Por isso restaurar é um
+script, e não um parágrafo de instruções para seguir na pior noite possível.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ferramentas\restaurar-windows.ps1 -Ensaio
+```
+
+`-Ensaio` mostra o que ele faria sem alterar nada. Sem a opção, ele lista as cópias, pergunta
+qual, e então: confere a cópia antes de tocar no banco atual, para as tarefas e espera o
+arquivo ser solto, guarda o banco atual com `-wal` e `-shm` numa pasta com a data, copia,
+confere de novo o que ficou no lugar e sobe o serviço.
+
+Para conferir uma cópia sem restaurar nada:
+
+```bash
+node ferramentas/conferir-copia.mjs backups/salao-2026-09-14T19-11-37-984Z.db
+```
+
+Abre só para leitura, roda `integrity_check`, exige as tabelas do salão e mostra quantas
+mesas, quantos na fila e quantos eventos há — a cópia de um salão vazio abre perfeitamente, e
+é esse o engano caro na hora de restaurar.
 
 ### Dado pessoal e LGPD
 
-O salão guarda nome e telefone de quem chega — é o telefone que serve de identidade, e sem ele
-não dá para impedir que a mesma pessoa esteja em duas mesas. Num software vendido a
-estabelecimentos, esse dado é de clientes de terceiros, e a casa responde por ele.
+O salão guarda nome e telefone de quem chega: é o telefone que serve de identidade. Num
+software vendido a estabelecimentos, esse dado é de clientes de terceiros.
 
-**O diário é o registro do que aconteceu, não um cadastro de clientes.** Passado o tempo em que
-o nome serve para alguma coisa — conferir uma reclamação, entender uma noite —, ele vira dado
-guardado sem motivo. Por isso o expurgo automático: eventos com mais de `SALAO_RETENCAO_DIAS`
-têm nome e telefone anulados, ao subir e uma vez por dia.
-
-**Anonimizar não custa nenhum número.** O esquema separa o que identifica do que conta: mesa,
-capacidade, pessoas, espera e permanência ficam. O relatório de seis meses atrás sai
-igualzinho, só sem os nomes. É `UPDATE`, nunca `DELETE` — apagar a linha mudaria o passado dos
-relatórios, que é o que o diário existe para não deixar acontecer.
+O diário é o registro do que aconteceu, não um cadastro de clientes. Eventos com mais de
+`SALAO_RETENCAO_DIAS` têm nome e telefone anulados, ao subir e uma vez por dia. Isso não custa
+nenhum número do relatório: o esquema separa o que identifica do que conta, então mesa,
+capacidade, pessoas, espera e permanência ficam. É `UPDATE`, nunca `DELETE` — apagar a linha
+mudaria o passado dos relatórios.
 
 Para quem pedir para ser esquecido:
 
@@ -229,84 +217,53 @@ Para quem pedir para ser esquecido:
 curl -X DELETE -H "Authorization: Bearer $SALAO_TOKEN"   "http://localhost:3000/clientes/%2B5511999998888"
 ```
 
-Tira o dado daquele telefone do diário inteiro, sem olhar data, e responde 200 mesmo quando
-não havia nada — quem pede para ser esquecido não precisa descobrir pela resposta se estava
-ou não guardado. Não mexe em quem está sentado ou na fila agora: pedir para ser esquecido no
-meio do próprio jantar é caso para o maître, não para o banco.
+Tira o dado daquele telefone do diário inteiro e responde 200 mesmo quando não havia nada. Não
+mexe em quem está sentado ou na fila agora.
 
-O pulso do "Sistema online" também não leva dado pessoal nenhum para fora — ver a seção
-abaixo.
+Estão feitos os mecanismos técnicos: minimização, retenção e eliminação a pedido. Aviso de
+privacidade, base legal e o contrato entre quem vende e a casa que opera não estão, e são
+trabalho de advogado.
 
-**O que isto não é.** São os mecanismos técnicos: minimização, retenção e eliminação a
-pedido. Conformidade também exige aviso de privacidade ao cliente do restaurante, base legal
-declarada, e contrato entre quem vende o software e a casa que o opera — quem é controlador e
-quem é operador. **Isso é trabalho de advogado, e não está feito aqui.**
+### Quando algo dá errado
+
+Rodando como tarefa do Agendador o log vai para stdout e se perde. Com `SALAO_LOG_ARQUIVO` ele
+passa a ser guardado em arquivo, com rodízio de quatro arquivos de 5 MB.
+
+```bash
+npm run suporte
+```
+
+Gera um `suporte-<data>.txt` com sistema, versão, datas dos builds, saúde do serviço, estado
+das cópias e as últimas 500 linhas do log.
+
+Pode ser enviado por e-mail: nome e telefone saem mascarados na escrita do log, então
+`DELETE /fila/+5511987654321` fica `DELETE /fila/••••4321`. Do `.env` vão só os nomes das
+variáveis e se estão preenchidas — o token e a senha do painel nunca entram.
 
 ### Sistema online
 
-Quem vende o salão precisa saber que a casa X está quieta desde ontem **sem esperar o telefone
-tocar no sábado**. O salão já se levanta sozinho quando cai; o que faltava era alguém ficar
-sabendo.
+Quem vende o salão precisa saber que uma casa está quieta sem esperar o telefone tocar.
 
 ```
 SALAO_PULSO_URL=https://seu-monitor/ping/cantina-do-ze
 SALAO_CASA=cantina-do-ze
 ```
 
-A cada cinco minutos a casa manda um POST dizendo que está funcionando. **O pulso sai, nada
-entra** — perguntar de fora exigiria que cada balcão tivesse endereço alcançável, o que um PC
-atrás de NAT não tem.
+A cada cinco minutos a casa manda um POST dizendo que está funcionando. Só sai HTTPS —
+perguntar de fora exigiria que cada balcão tivesse endereço alcançável, o que um PC atrás de
+NAT não tem. Aponte para um serviço que alerte quando o sinal para de chegar e não há servidor
+nenhum para escrever.
 
-Quem recebe fica de fora de propósito: aponte para um serviço de monitoramento pronto — dos
-que alertam quando o sinal **para** de chegar — e não há servidor nenhum para escrever. Se um
-dia quiser o seu próprio painel de casas, troque a URL e o salão nem percebe.
-
-Vai junto a saúde do backup, porque as duas perguntas que se faz de longe são "a casa está de
-pé?" e "a casa está copiando o banco?". Um salão no ar que parou de copiar há três dias
-responde igualzinho a um saudável.
+Vai junto a saúde do backup, porque um salão no ar que parou de copiar há três dias responde
+igual a um saudável:
 
 ```json
 {"casa":"cantina-do-ze","momento":"2026-09-15T01:37:12.121Z",
  "backup":{"ultimaCopiaEm":"2026-09-15T01:37:12.087Z","falhasSeguidas":0,"espelhoEm":null}}
 ```
 
-**Nenhum dado de cliente atravessa.** Nome, telefone e o diário ficam na casa; daqui saem
-contagens e horários, e mais nada — nem o caminho dos arquivos. Quem recebe o pulso é um
-terceiro, e isso não é detalhe de implementação: é o que permite apontar o pulso para um
-serviço de fora sem mandar junto dado pessoal de quem jantou ali. Há teste travando o formato.
-
-Pulso que não chega **não derruba nada**: internet fora é falha de pulso, não de atendimento.
-Fica em `/saude`, junto com o backup.
-
-### Restaurar
-
-Backup que nunca foi restaurado não é backup: é um arquivo que se espera que sirva. Por isso
-restaurar é um script, e não um parágrafo de instruções para seguir na pior noite possível.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File ferramentas\restaurar-windows.ps1 -Ensaio
-```
-
-`-Ensaio` mostra o que ele faria e não altera nada — rode assim uma vez, hoje, para saber que
-funciona. Sem `-Ensaio`, ele lista as cópias (a mais nova primeiro), pergunta qual, e então:
-
-1. **confere a cópia antes de tocar no banco atual** — nunca se troca um banco que funciona
-   por uma cópia que não abre;
-2. para as tarefas do Windows e espera o arquivo ser solto, porque aqui o arquivo fica preso
-   enquanto o processo o tiver aberto;
-3. **guarda o banco atual, nunca apaga** — junto com o `-wal` e o `-shm`, numa pasta com a
-   data. Restaurar a cópia errada é um engano possível, e não pode ser um engano definitivo;
-4. copia, confere de novo o arquivo que ficou no lugar, e sobe o serviço.
-
-Para conferir uma cópia sem restaurar nada — vale a pena de vez em quando:
-
-```bash
-node ferramentas/conferir-copia.mjs backups/salao-2026-09-14T19-11-37-984Z.db
-```
-
-Ele abre só para leitura, roda `integrity_check` no banco inteiro, exige as tabelas do salão e
-mostra quantas mesas, quantos na fila e quantos eventos há ali — porque a cópia de um salão
-vazio abre perfeitamente, e é o engano caro de não perceber na hora de restaurar.
+Nenhum dado de cliente atravessa: saem contagens e horários, e nem o caminho dos arquivos. Há
+teste travando o formato. Pulso que não chega não derruba nada e fica registrado em `/saude`.
 
 ## API
 
@@ -319,17 +276,17 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 
 | Método | Rota | O que faz |
 | --- | --- | --- |
-| `GET` | `/saude` | Sinal de vida **e como anda o backup**. Sem token |
+| `GET` | `/saude` | Sinal de vida e como anda o backup. Sem token |
 | `GET` | `/salao` | Retrato de agora: ocupação, tempo médio de espera, fila e mesas |
 | `GET` | `/relatorio` | Fechamento de um período — `?de=<ISO>&ate=<ISO>` |
 | `GET` | `/eventos` | O diário cru do período — `?de=<ISO>&ate=<ISO>&limite=<1..500>` |
 | `POST` | `/mesas` | Cadastra mesa — `{ id, numero, capacidade }`. Se alguém na fila couber nela, já nasce reservada |
 | `GET` | `/mesas/:id` | Estado da mesa e quem a ocupa |
 | `DELETE` | `/mesas/:id` | Tira a mesa da planta. Mesa ocupada ou já chamada não sai |
-| `POST` | `/chegadas` | **Cliente chegou** — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
+| `POST` | `/chegadas` | Cliente chegou — `{ nome, pessoas, telefone }`. O salão decide entre mesa e fila |
 | `GET` | `/chegadas/previa` | Onde esse grupo iria parar, sem mudar nada — `?pessoas=N&telefone=<opcional>` |
 | `DELETE` | `/fila/:telefone` | Desistência: sai da fila |
-| `DELETE` | `/clientes/:telefone` | **Esquecimento (LGPD)**: tira nome e telefone do diário |
+| `DELETE` | `/clientes/:telefone` | Esquecimento (LGPD): tira nome e telefone do diário |
 | `POST` | `/mesas/:id/reserva` | O anfitrião senta alguém numa mesa escolhida a dedo |
 | `DELETE` | `/mesas/:id/reserva` | Cancela a reserva; a mesa vai para o próximo da fila que couber |
 | `POST` | `/mesas/:id/ocupacao` | O grupo chegou à mesa e sentou |
@@ -338,28 +295,28 @@ Parâmetros de caminho são percent-decodificados: um telefone em E.164 vai como
 | `POST` | `/mesas/:id/posicao` | Arrasta a mesa na planta — `{ coluna, linha }` |
 
 `POST /chegadas` é a porta de entrada normal. `POST /mesas/:id/reserva` existe para o
-anfitrião escolher a mesa, e **continua respeitando a ordem de chegada**: se alguém na fila
+anfitrião escolher a mesa, e continua respeitando a ordem de chegada: se alguém na fila
 cabe naquela mesa, só ele pode recebê-la — e quem senta é o cliente que já estava na fila,
 com a hora de chegada dele. Se o nome ou o tamanho do grupo do pedido não baterem com o que
 está na fila, a resposta é `409 IdentidadeDivergente` em vez de uma troca silenciosa.
 
-**Toda mesa diz desde quando.** O campo `desde` marca o instante em que a mesa entrou no
+Toda mesa diz desde quando. O campo `desde` marca o instante em que a mesa entrou no
 status atual, e muda só nas transições — arrastar a mesa na planta não faz o grupo sentar de
 novo. É daí que saem duas coisas que o status sozinho não responde: há quanto tempo o grupo
 está na mesa, e há quanto tempo quem foi chamado ainda não apareceu. Bancos de versões
 anteriores ganham a coluna na primeira abertura, contando a partir da migração — não há como
 descobrir depois quando cada mesa entrou no status em que está.
 
-**O diário diz o que aconteceu.** O estado responde como o salão está agora; nenhuma
+O diário diz o que aconteceu. O estado responde como o salão está agora; nenhuma
 pergunta sobre o passado — maior espera da noite, pico da fila, quantas vezes cada mesa
-girou — cabe nele. Por isso cada operação também deixa eventos, e o repositório os grava **na
-mesma transação** do estado: evento escrito depois sobreviveria a um rollback, e o relatório
+girou — cabe nele. Por isso cada operação também deixa eventos, e o repositório os grava na
+mesma transação do estado: evento escrito depois sobreviveria a um rollback, e o relatório
 passaria a contar atendimento que não houve.
 
 `GET /relatorio?de=…&ate=…` resume um período. As bordas vêm em ISO de quem chama, porque só
 o cliente sabe onde começa "hoje" no fuso do restaurante. Dois números pedem leitura atenta:
-a **espera média** é de quem passou pela fila — juntar os zeros de quem sentou direto mediria
-o quanto o salão estava vazio, não quanto se espera quando há espera; e o **pico da fila**
+a espera média é de quem passou pela fila — juntar os zeros de quem sentou direto mediria
+o quanto o salão estava vazio, não quanto se espera quando há espera; e o pico da fila
 conta a partir de zero no começo do período, sem saber quantos já aguardavam antes dele.
 
 `GET /eventos?de=…&ate=…` devolve os mesmos fatos sem somar nada, do mais recente para o mais
@@ -368,16 +325,16 @@ noite", o diário responde "o que acabou de acontecer". `limite` corta a respost
 leitura — o período é lido inteiro de qualquer jeito, e o corte existe para o painel não
 arrastar o dia todo a cada atualização; por isso `total` conta o período, não a fatia.
 
-**O telefone é a identidade.** O mesmo número não pode estar em duas mesas, nem sentado e na
+O telefone é a identidade. O mesmo número não pode estar em duas mesas, nem sentado e na
 fila ao mesmo tempo — é por ele que se desiste da fila e é para ele que o aviso de mesa
 pronta vai.
 
-`GET /chegadas/previa?pessoas=…` responde **o que aconteceria** se esse grupo chegasse agora:
+`GET /chegadas/previa?pessoas=…` responde o que aconteceria se esse grupo chegasse agora:
 `{ destino: "mesa" | "fila" | "recusa", mesa, posicao, motivo }`. É leitura pura — nada muda
 no salão — e chama exatamente o mesmo cálculo que `POST /chegadas` faria, inclusive a regra
 de que uma mesa livre não serve se alguém que já espera também caberia nela. Existe para o
-painel poder mostrar o destino a quem ainda está digitando **sem uma segunda cópia da regra
-na tela**: duas cópias divergem, e a tela passaria a prometer mesa que o salão não daria. Na
+painel poder mostrar o destino a quem ainda está digitando sem uma segunda cópia da regra
+na tela: duas cópias divergem, e a tela passaria a prometer mesa que o salão não daria. Na
 recusa, `motivo` é o mesmo `tipo` do erro que a chegada de verdade lançaria; o texto a
 mostrar é escolhido por quem apresenta. O telefone é opcional — sem ele a resposta considera
 só o tamanho do grupo.
@@ -427,7 +384,7 @@ npm run start:env     # o serviço, porta 3000
 npm run web:env       # o painel, porta 5173
 ```
 
-Dois processos, de propósito. **O painel existe por causa do token**: `SALAO_TOKEN` é segredo
+Dois processos, de propósito. O painel existe por causa do token: `SALAO_TOKEN` é segredo
 único da equipe, e em JavaScript de navegador qualquer um que abra o devtools libera todas as
 mesas do salão. Então `web/servidor` guarda o token, serve `web/publico/` e repassa `/api/...`
 para o serviço pondo o cabeçalho ali. O `Authorization` que chega do navegador é descartado —
@@ -435,22 +392,13 @@ quem fala com o serviço não escolhe a credencial.
 
 ### A senha do painel
 
-Esconder o token do navegador cria a outra ponta do problema, e ela não é óbvia: **como é o
-painel que carrega a credencial, quem alcança o painel manda no salão** — sem token nenhum. E
-o painel escuta na rede de propósito, que é como o tablet do balcão o abre. Sem senha,
-qualquer um no wifi do restaurante abre `http://<ip-do-balcão>:5173` e senta gente, libera
-mesa, tira mesa da planta e fecha o dia.
+O painel guarda o token e escuta na rede, então quem abre `http://<ip-do-balcão>:5173`
+manda no salão sem precisar de token. Por isso ele tem senha própria: o token é o que o
+painel usa para falar com o serviço, a senha é o que uma pessoa usa para falar com o painel.
 
-Daí uma senha própria do painel, de papel diferente do token: o token é o que o painel usa
-para falar com o serviço; a senha é o que uma pessoa usa para falar com o painel.
-
-**Quem a cria é quem opera, na primeira vez que o painel abre.** Não há senha em arquivo de
-configuração, e não há senha padrão — senha padrão em produto vendido é a mesma senha em
-todas as casas. Enquanto ela não existe, o painel inteiro é a tela de criá-la: qualquer
-caminho leva a `/criar-senha`, e nem o CSS sai. Criada a senha, esse caminho se fecha — senão
-seria uma porta para trocar a senha de quem já tem uma, sem saber a antiga.
-
-A mesma senha vale no computador do balcão e no tablet; cada aparelho guarda a própria sessão.
+Não há senha em arquivo de configuração nem senha padrão — quem opera cria a dela na primeira
+vez que o painel abre. Enquanto ela não existe, qualquer caminho leva a `/criar-senha` e nem
+o CSS é servido. Depois de criada, esse caminho passa a mandar para `/entrar`.
 
 | Caminho | O que faz |
 | --- | --- |
@@ -459,37 +407,21 @@ A mesma senha vale no computador do balcão e no tablet; cada aparelho guarda a 
 | `/trocar-senha` | Exige a senha atual, mesmo de quem já está logado |
 | `/sair` | Encerra a sessão deste aparelho |
 
-**Guardamos o hash, nunca a senha**, em `painel-senha.json` (fora do git). Sai por `scrypt`,
-que vem no Node e é feito para senha: caro de propósito, para que quem levar o arquivo não
-teste milhões de palpites por segundo. SHA-256 puro seria rápido demais, e é o engano comum.
-Quem abrir um backup sincronizado para a nuvem não fica sabendo a senha — o que importa além
-daqui, porque quase todo mundo repete senha entre sistemas.
+A mesma senha vale no computador do balcão e no tablet, cada um com a própria sessão. O que
+fica em disco é o hash, em `painel-senha.json` (fora do git), por `scrypt` — que é lento de
+propósito, ao contrário de SHA-256 puro. Esqueceu? Apague o arquivo e o painel pede uma nova.
 
-**Esqueceu a senha?** Apague `painel-senha.json` e o painel pede uma nova na próxima abertura.
-Não é fraqueza: quem alcança o disco já alcança o banco do restaurante inteiro.
+A sessão é um cookie `HttpOnly`, `SameSite=Strict`, assinado com uma chave derivada do hash.
+Como a chave vem do hash, trocar a senha derruba as sessões abertas, e reiniciar o painel não
+derruba ninguém. Senha errada custa 400 ms e vai para o log; o mínimo é 8 caracteres.
 
-A sessão é um cookie `HttpOnly`, `SameSite=Strict`, assinado com HMAC-SHA256 por uma chave
-derivada do **hash** da senha — o servidor só vê a senha no instante em que alguém a digita.
-Daí duas consequências boas: a sessão sobrevive ao painel reiniciar, então ninguém é
-deslogado quando o Agendador levanta o processo no meio do sábado; e **trocar a senha derruba
-todas as sessões abertas**, que é o que se espera ao trocar uma senha.
-
-Enquanto não autenticado, **nada de `publico/` é servido** — nem o CSS, nem o JS: tudo
-redireciona, e `/api/...` responde `401` em JSON, para o painel saber pedir a senha em vez de
-mostrar "erro desconhecido". As telas de senha são HTML autocontido, sem depender de nenhum
-arquivo protegido.
-
-Senha errada custa 400 ms e sai no log. Não é proteção contra força bruta de verdade — para
-isso a senha precisa ser boa, e o mínimo aqui é de 8 caracteres.
-
-O cookie não é `Secure`, porque o painel roda em `http://` na rede local e um cookie `Secure`
-simplesmente não seria mandado. Consequência: quem consegue ler o tráfego daquela rede lê o
-cookie. Numa rede de balcão é aceitável; numa rede compartilhada com os clientes, o certo é
-separar a rede — não é problema que senha nenhuma resolva.
+O cookie não é `Secure` porque o painel roda em `http://` na rede local, e um cookie `Secure`
+não seria enviado. Quem lê o tráfego da rede lê o cookie — numa rede compartilhada com os
+clientes, a resposta é separar a rede, não trocar a senha.
 
 ### O que está na tela
 
-A **planta** é a grade 12 × 9 do domínio com as mesas por cima. Verde é livre, âmbar é
+A planta é a grade 12 × 9 do domínio com as mesas por cima. Verde é livre, âmbar é
 chamada, vermelho é ocupada — e nada mais no painel usa essas três cores, para que não
 percam o sentido. As bolinhas em volta são os lugares: dá para contar as cadeiras e ver que
 sobram duas na mesa de quatro. Ao lado, quatro números (ocupação, maior mesa livre, espera
@@ -501,7 +433,7 @@ a mesa*. O que tira a mesa de alguém pede um segundo toque. Clicar em quem espe
 tirá-lo da fila. A resposta do serviço vira frase — "Mesa 3 liberada e chamada para Ana" —
 em vez de mandar conferir na tela.
 
-Em **Chegou alguém**, enquanto se digita, uma linha diz onde o grupo vai parar: "Senta na
+Em Chegou alguém, enquanto se digita, uma linha diz onde o grupo vai parar: "Senta na
 mesa 3", "Entra na fila, na posição 2", "Este telefone já está na mesa 3". Essa resposta vem
 de `GET /chegadas/previa`, não de um cálculo aqui — a razão está na seção da API. O botão
 continua valendo mesmo quando a prévia recusa: a prévia é um retrato de alguns segundos
@@ -509,15 +441,15 @@ atrás, e quem decide de verdade é o serviço, no momento do envio.
 
 ### Montar o salão
 
-**Montar salão** liga um modo à parte, e é à parte de propósito: quem opera clica em mesa a
+Montar salão liga um modo à parte, e é à parte de propósito: quem opera clica em mesa a
 noite inteira para sentar e liberar gente, e se arrastar também mexesse na planta um dedo
 escorregando no tablet mudaria o salão no meio do movimento. Ligado o modo, a planta muda de
 cara, clicar não senta ninguém, e dá para:
 
-- **pôr mesa** — número já sugerido no menor livre, lugares, e ela entra no primeiro espaço
+- pôr mesa — número já sugerido no menor livre, lugares, e ela entra no primeiro espaço
   vago da planta;
-- **arrastar** para o lugar dela, com o dedo ou o mouse, encaixando no ladrilho;
-- **tirar da planta** — só mesa livre. Mesa ocupada, ou já chamada para alguém que está a
+- arrastar para o lugar dela, com o dedo ou o mouse, encaixando no ladrilho;
+- tirar da planta — só mesa livre. Mesa ocupada, ou já chamada para alguém que está a
   caminho, não sai: sumiria com um atendimento em curso sem ninguém decidir o que fazer com
   quem está lá.
 
@@ -536,26 +468,26 @@ esconder o resto da tela na impressão, regra que quebra ao primeiro elemento no
 impressão as cores se invertem (o painel é escuro porque o salão é escuro; papel é branco) e
 some tudo que só serve na tela.
 
-O período é **hoje**, **ontem** ou um **intervalo** de datas. Como os números saem do diário,
+O período é hoje, ontem ou um intervalo de datas. Como os números saem do diário,
 e não do estado do salão, pedir ontem funciona e o relatório sobrevive a um reinício do
 serviço no meio do expediente.
 
 Dois arquivos saem em CSV, com `;` e BOM porque é o que abre certo no Excel em português (a
 razão está em `csv.ts`):
 
-- **o resumo** — os indicadores do período e a tabela por mesa, duas tabelas separadas por
+- o resumo — os indicadores do período e a tabela por mesa, duas tabelas separadas por
   uma linha em branco no mesmo arquivo, que é como se olha a noite inteira de uma vez;
-- **o diário** — um evento por linha, com o momento em ISO e a hora legível ao lado.
-  **Sem telefone**: este arquivo sai do salão, e o relatório do dia não precisa levar junto
+- o diário — um evento por linha, com o momento em ISO e a hora legível ao lado.
+  Sem telefone: este arquivo sai do salão, e o relatório do dia não precisa levar junto
   uma lista de contatos de clientes para ser útil.
 
-**A mesa chamada tem prazo.** `RESERVADA` já significa "chamada, ainda não sentou", e o
+A mesa chamada tem prazo. `RESERVADA` já significa "chamada, ainda não sentou", e o
 `desde` diz desde quando; o painel conta cinco minutos a partir daí e, quando estouram,
 marca a mesa. Só marca: quem devolve a mesa é o maître, nunca o relógio — quem foi chamado
 pode estar estacionando o carro, e um cancelamento automático daria a mesa dessa pessoa para
 outra sem ninguém ter olhado.
 
-**Desenho por região.** A tela se atualiza sozinha a cada três segundos, e o que a
+Desenho por região. A tela se atualiza sozinha a cada três segundos, e o que a
 atualização substitui é só o que veio do serviço: planta, números, diário e fila. A caixa de
 busca e a janela de ação ficam de fora — um painel que apagasse o nome sendo digitado, ou que
 fechasse a janela no meio de uma decisão, perderia a confiança de quem opera em um
@@ -563,17 +495,17 @@ expediente. Pela mesma razão os cliques são ouvidos nos contêineres, e não n
 cartões são trocados, os contêineres não. E as contagens regressivas correm num tique local
 de um segundo que só reescreve texto, para não ficarem tremendo junto com a rede.
 
-Sem contato com o serviço, o último retrato **fica na tela** com um aviso dizendo de quando
+Sem contato com o serviço, o último retrato fica na tela com um aviso dizendo de quando
 ele é. Num salão cheio, o estado conhecido de um minuto atrás vale mais do que uma tela em
 branco.
 
-**O fuso do restaurante mora no painel**, em `web/navegador/tempo.ts` — hoje
+O fuso do restaurante mora no painel, em `web/navegador/tempo.ts` — hoje
 `America/Sao_Paulo`. O serviço trabalha com instantes, e instante não tem fuso; "hoje" tem, e
 quem sabe onde começa o dia é quem opera o salão. Fixar no painel também é mais correto do que
 usar o fuso do aparelho: o tablet do balcão pode estar configurado de qualquer jeito, e o
 relatório do dia não pode depender disso.
 
-**A posição do domínio é um ladrilho**; o vão de vários ladrilhos que cada mesa ocupa na tela
+A posição do domínio é um ladrilho; o vão de vários ladrilhos que cada mesa ocupa na tela
 é invenção do painel. Daí vem o único caso curioso: duas mesas a um ladrilho de distância são
 legais no domínio e se cobririam no desenho. Quando isso acontece, a de número menor fica
 onde está e a outra vai para o primeiro vão livre — mesa desenhada em outro canto ainda se
@@ -584,7 +516,7 @@ Nome de cliente é texto que alguém digitou no balcão, então nada no painel e
 
 ## Operação
 
-O log é **uma linha JSON por evento**, com campos nomeados em vez de texto interpolado, para
+O log é uma linha JSON por evento, com campos nomeados em vez de texto interpolado, para
 poder filtrar e agregar:
 
 ```json
@@ -602,28 +534,28 @@ de sair à força.
 
 Quando uma mesa vira e alguém sai da fila para ela, o `Notificador` é chamado.
 
-Duas regras que o `MotorGerente` já respeita: o aviso sai **depois** da transação confirmar, e
-falha de aviso **não** desfaz a alocação. A mesa já é daquele cliente; provedor fora do ar não
+Duas regras que o `MotorGerente` já respeita: o aviso sai depois da transação confirmar, e
+falha de aviso não desfaz a alocação. A mesa já é daquele cliente; provedor fora do ar não
 pode cancelar o atendimento.
 
-**Não há API de notificação implementada.** O aviso vai para o **log**
+Não há API de notificação implementada. O aviso vai para o log
 (`NotificadorDeLog`) e quem chama o cliente é o maître. Avisar por mensagem depende de
 contratar um serviço de terceiros — WhatsApp, SMS ou outro — e implementar `Notificador` com
 ele, sem tocar no domínio: é para isso que a porta existe.
 
 Se for ligar um provedor no Brasil, dois obstáculos que valem saber de antemão:
 
-- **SMS** para números brasileiros exige registro prévio de sender ID junto às operadoras,
+- SMS para números brasileiros exige registro prévio de sender ID junto às operadoras,
   com documentação e carta de autorização;
   [sender alfanumérico não funciona em conta de teste](https://support.twilio.com/hc/en-us/articles/223181348-Alphanumeric-Sender-ID-for-Twilio-Programmable-SMS)
   e tráfego não registrado costuma ser filtrado.
-- **WhatsApp** trata como iniciada pela empresa toda mensagem que não seja resposta dentro de
+- WhatsApp trata como iniciada pela empresa toda mensagem que não seja resposta dentro de
   24h a uma mensagem do cliente, e exige
   [template pré-aprovado](https://www.twilio.com/docs/whatsapp/tutorial/send-whatsapp-notification-messages-templates)
   para essas. "Sua mesa está pronta" é exatamente esse caso, então o adaptador precisará
   mandar o identificador do template e as variáveis, não texto livre.
 
-Vale para qualquer forma de avisar, não só mensagem: um **painel de LED** mostrando a vez da
+Vale para qualquer forma de avisar, não só mensagem: um painel de LED mostrando a vez da
 fila é outra implementação de `Notificador`, ou uma tela a mais lendo `GET /fila`. A porta não
 sabe se do outro lado há uma operadora ou um display na parede.
 
@@ -651,37 +583,37 @@ src/
 
 Quatro decisões explicam o resto:
 
-**Posição é planta, não regra.** Mesa tem lugar no salão porque estabelecimento real tem
+Posição é planta, não regra. Mesa tem lugar no salão porque estabelecimento real tem
 disposição de mesas, e quem opera precisa reconhecer "a mesa do canto" — `POST
 /mesas/:id/posicao` move uma. Mas nenhuma regra de alocação usa posição: quem senta onde
 continua sendo decidido por capacidade e ordem de chegada. Há teste fixando isso — a mesa
 pequena no fundo vence a grande na entrada.
 
-**O agregado é o salão, não a mesa.** Mesas e fila precisam mudar juntas para continuarem
+O agregado é o salão, não a mesa. Mesas e fila precisam mudar juntas para continuarem
 coerentes — dar uma mesa a alguém é, no mesmo instante, tirá-lo da fila. Por isso a
 consistência se define no salão inteiro, e é ele que se carrega e grava.
 
-**A transação é a unidade de atomicidade.** `RepositorioDoSalao.transacao` recebe uma operação
-**síncrona**, de propósito: assim nenhuma E/S entra no meio de uma decisão de alocação. No
+A transação é a unidade de atomicidade. `RepositorioDoSalao.transacao` recebe uma operação
+síncrona, de propósito: assim nenhuma E/S entra no meio de uma decisão de alocação. No
 SQLite é `BEGIN IMMEDIATE` com `ROLLBACK`; em memória é uma trava mais restauração do estado
-se a operação lançar. As duas implementações rodam a **mesma suíte de contrato**
+se a operação lançar. As duas implementações rodam a mesma suíte de contrato
 (`dominio/portas/contrato-do-repositorio.test.ts`) — é o que garante que trocar memória por
-banco não muda o que o domínio pode esperar. A suíte cobre também o que o adaptador **não**
+banco não muda o que o domínio pode esperar. A suíte cobre também o que o adaptador não
 pode fazer: guardar a `Mesa` que recebeu, ou devolver o item vivo da fila. Um adaptador que
 faça isso deixa o chamador mudar o salão fora da transação.
 
-**Leitura não é escrita.** `consulta` é a mesma porta sem gravação: `BEGIN DEFERRED` no
+Leitura não é escrita. `consulta` é a mesma porta sem gravação: `BEGIN DEFERRED` no
 SQLite, a trava sem fotografar o estado em memória. Enquanto todo `GET` passava por
 `transacao`, uma leitura tomava a trava de escrita do banco e reescrevia as tabelas — dois
 processos não conseguiam nem ler ao mesmo tempo. O `busy_timeout` do SQLite é 5s, e não o
 zero padrão, que faz qualquer disputa falhar na hora.
 
-**O tempo é injetável.** `Relogio` entra por construtor, então o tempo médio de espera é
+O tempo é injetável. `Relogio` entra por construtor, então o tempo médio de espera é
 testado sem esperar de verdade. Nenhum teste depende de `sleep`.
 
 ### Ferramental
 
-O lint é o **Biome**, não ESLint: `typescript-eslint` exige TypeScript `<6.1` e este projeto
+O lint é o Biome, não ESLint: `typescript-eslint` exige TypeScript `<6.1` e este projeto
 usa a versão 7, o port nativo — forçar instalaria um linter que depende de APIs internas do
 compilador que mudaram. O Biome tem parser próprio e não depende da versão do TypeScript.
 
@@ -691,46 +623,38 @@ resultante inclui `undefined`. Trocar por ponto esconderia isso.
 
 ## Limitações conhecidas
 
-- **Autenticação é um token único da equipe**, sem usuários nem papéis. Serve para API de
+- Autenticação é um token único da equipe, sem usuários nem papéis. Serve para API de
   retaguarda; uma API pública multiusuário precisa de credencial por pessoa.
-- **O repositório em memória serializa por processo**; só o SQLite é seguro com mais de um
+- O repositório em memória serializa por processo; só o SQLite é seguro com mais de um
   processo escrevendo.
-- **Não há provedor de mensagem ligado.** O aviso a quem sai da fila vai para o log; a porta
+- Não há provedor de mensagem ligado. O aviso a quem sai da fila vai para o log; a porta
   `Notificador` está pronta para receber uma implementação de verdade.
-- **O aviso não tem outbox.** Ele sai depois do commit, como deve; mas se o processo cair
+- O aviso não tem outbox. Ele sai depois do commit, como deve; mas se o processo cair
   entre o commit e a chamada ao `Notificador`, a mesa fica alocada e ninguém é chamado — e
   nada no estado registra que o aviso ficou pendente. Com um provedor de verdade ligado, é a
   próxima peça a construir.
 - Sem rate limiting: um cliente autenticado pode inundar a API.
-- **O diário só cresce.** Não há expurgo nem arquivamento: um salão movimentado acumula
-  eventos para sempre. A consulta é indexada por momento, então a leitura de um período não
-  degrada, mas o arquivo sim.
-- **Não há como voltar uma migração.** O caminho é só para a frente; para desfazer, restaure uma
-  cópia anterior à atualização. É escolha: migração reversa é código que quase nunca roda e
-  quase nunca está certo quando roda, e aqui existe uma restauração testada.
-- **O painel atualiza por polling**, quatro leituras a cada três segundos. Numa casa e num
+- O diário nunca perde linhas. O expurgo anula nome e telefone dos eventos antigos, mas
+  não apaga a linha — o relatório de meses atrás precisa dela. Num salão movimentado o arquivo
+  cresce para sempre. A consulta é indexada por momento, então ler um período não degrada.
+- Não há como voltar uma migração. Para desfazer, restaure uma cópia anterior à
+  atualização. Migração reversa é código que quase nunca roda e quase nunca está certo quando
+  roda.
+- O painel atualiza por polling, quatro leituras a cada três segundos. Numa casa e num
   painel só isso é irrelevante; com muitos painéis abertos, o caminho é o servidor do painel
   empurrar as mudanças em vez de cada aba perguntar.
-- **Não dá para mudar número ou lugares de uma mesa que já existe**, só pôr e tirar. Montar
+- Não dá para mudar número ou lugares de uma mesa que já existe, só pôr e tirar. Montar
   o salão errado custa apagar e refazer — o que não perde nada do diário, mas é chato.
-- **Sem `SALAO_BACKUP_ESPELHO`, as cópias ficam no mesmo disco** e não protegem contra o disco
-  morrer. Configurar o espelho resolve, mas alguém tem de apontá-lo — não há padrão seguro
-  para adivinhar aqui.
-- **Não há cópia no encerramento quando o Windows encerra o processo à força**, que é o
-  caso normal: parar a tarefa no Agendador não entrega sinal nenhum ao Node. Medido —
-  `SIGTERM` e `SIGINT` matam sem passar pelo código de encerramento, `SIGBREAK` e `SIGHUP`
-  nem matam. A cópia periódica cobre o buraco; a mais recente pode ser de até seis horas
-  atrás.
-- **A duração da repetição não pode ser um `TimeSpan` enorme.** `[TimeSpan]::MaxValue` cria o
-  gatilho sem reclamar e o Agendador **recusa o registro** com "valor fora do intervalo".
-  Duração vazia é como ele escreve "para sempre". Fica anotado porque o erro só aparece no
-  registro, e o script desregistra a tarefa antes de registrar a nova.
-- **Só Windows.** Não há equivalente para Linux ou macOS; num Linux, `systemd --user` faria o
+- Sem `SALAO_BACKUP_ESPELHO` as cópias ficam no mesmo disco, e alguém tem de apontar o
+  espelho: não há padrão seguro para adivinhar.
+- Não há cópia no encerramento no Windows. Parar a tarefa no Agendador não entrega sinal
+  nenhum ao Node, então o código de encerramento não roda. Quem cobre é a cópia periódica.
+- Só Windows. Não há equivalente para Linux ou macOS; num Linux, `systemd --user` faria o
   mesmo papel.
-- **O CSV do diário para em 500 eventos**, que é o teto de `/eventos`. Um dia cabe com folga;
+- O CSV do diário para em 500 eventos, que é o teto de `/eventos`. Um dia cabe com folga;
   um intervalo longo não, e a tela avisa quantos ficaram de fora em vez de entregar um
   arquivo cortado em silêncio. Exportar período grande pede paginação, que não existe.
-- **A prévia da chegada é um retrato**, não uma reserva. Entre ver "senta na mesa 3" e
+- A prévia da chegada é um retrato, não uma reserva. Entre ver "senta na mesa 3" e
   apertar o botão, a mesa pode ter ido para outro grupo — e aí quem recusa é o serviço, com
   o erro de sempre. É o comportamento certo, mas convém saber que a linha verde não promete
   nada.

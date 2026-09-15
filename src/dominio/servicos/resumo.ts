@@ -19,7 +19,7 @@ export interface ResumoDoPeriodo {
     gruposAtendidos: number;
     pessoasAtendidas: number;
     /**
-     * Média de espera de quem **passou pela fila**. Quem chegou e sentou
+     * Média de espera de quem passou pela fila. Quem chegou e sentou
      * direto não entra: incluir um monte de zeros faria o número dizer o
      * quanto o salão estava vazio, não quanto se espera quando há espera.
      */

@@ -4,22 +4,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 /**
  * A senha do painel, criada por quem opera na primeira abertura.
  *
- * Antes ela vinha de `PAINEL_SENHA`, no `.env`. Trocar por isto muda quem
- * decide: instalar deixa de exigir que alguém abra um arquivo de configuração e
- * invente uma senha ali, e o sistema pede a senha na cara, uma vez, a quem vai
- * usá-lo. Uma instalação a menos para dar errado em silêncio.
+ * Guardamos o hash, nunca a senha: quem abrir o arquivo — um backup
+ * sincronizado para a nuvem, por exemplo — não fica sabendo qual é. Sai por
+ * `scrypt`, que é lento de propósito; SHA-256 puro seria rápido demais para
+ * quem quisesse testar palpites em massa.
  *
- * **Guardamos o hash, nunca a senha.** Quem abrir o arquivo — um backup
- * sincronizado para a nuvem, por exemplo — não fica sabendo a senha, e como
- * quase todo mundo repete senha entre sistemas, isso importa além daqui.
- *
- * `scrypt` porque vem no Node e é feito para senha: é caro de propósito, então
- * quem levar o arquivo não testa milhões de palpites por segundo. SHA-256 puro
- * seria rápido demais para isso, e é o engano comum.
- *
- * Perder o arquivo não tranca ninguém para fora: sem ele o painel volta a pedir
- * uma senha nova, como na primeira vez. Não é fraqueza — quem alcança o disco
- * já alcança o banco do restaurante inteiro; é a saída de quem esqueceu a senha.
+ * Perder o arquivo não tranca ninguém para fora: sem ele o painel pede uma
+ * senha nova, como na primeira vez. É a saída de quem esqueceu a senha, e quem
+ * alcança o disco já alcança o banco inteiro de qualquer forma.
  */
 
 /** Cara o bastante para punir tentativa em massa, rápido o bastante no balcão. */
@@ -67,8 +59,8 @@ export function senhaConfere(senha: string, credencial: Credencial): boolean {
  * A chave que assina as sessões, derivada do hash da senha.
  *
  * Sai do hash, e não da senha, porque o servidor não guarda a senha — só a vê
- * no instante em que alguém a digita. E sai dele de propósito: **trocar a senha
- * troca o hash, que troca a chave, que invalida toda sessão aberta**, que é o
+ * no instante em que alguém a digita. E sai dele de propósito: trocar a senha
+ * troca o hash, que troca a chave, que invalida toda sessão aberta, que é o
  * que se espera ao trocar uma senha. Também sobrevive ao processo reiniciar,
  * sem mais um segredo para configurar.
  */

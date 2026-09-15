@@ -1,5 +1,11 @@
 import { dirname, join, resolve } from "node:path";
-import { criarRegistradorJson, descreverErro, type Registrador } from "./compartilhado/log/registrador.js";
+import {
+    criarRegistradorJson,
+    descreverErro,
+    type Nivel,
+    type Registrador
+} from "./compartilhado/log/registrador.js";
+import { criarEscritorDeArquivo } from "./infra/log/arquivo-de-log.js";
 import { Mesa } from "./dominio/entidades/mesa.js";
 import { type EstadoDoBackup, RotinaDeBackup } from "./infra/backup/rotina-de-backup.js";
 import { RotinaDePulso } from "./infra/pulso/rotina-de-pulso.js";
@@ -30,6 +36,7 @@ import { RepositorioDoSalaoSqlite } from "./infra/sqlite/repositorio-do-salao-sq
  * | SALAO_PULSO_MINUTOS   | 5      | De quantos em quantos minutos avisar             |
  * | SALAO_CASA            | —      | Nome desta casa, para quem recebe o pulso        |
  * | SALAO_RETENCAO_DIAS   | 90     | Depois disso, nome e telefone saem do diário     |
+ * | SALAO_LOG_ARQUIVO     | —      | Guarda o log também num arquivo, com rodízio      |
  */
 
 /**
@@ -60,7 +67,7 @@ function lerPorta(): number {
 }
 
 /**
- * Sem token o serviço **não sobe**. Uma API que opera o salão aberta por
+ * Sem token o serviço não sobe. Uma API que opera o salão aberta por
  * omissão é o tipo de padrão que só se descobre errado depois; abrir tem de
  * ser escolha declarada.
  */
@@ -98,7 +105,7 @@ function inteiroDoAmbiente(nome: string, padrao: number, minimo: number): number
 /**
  * A rotina de cópias do banco.
  *
- * **Ligada por padrão.** Quem esquece a variável não pode ficar sem backup —
+ * Ligada por padrão. Quem esquece a variável não pode ficar sem backup —
  * esse é justamente o modo de falhar que a rotina existe para evitar. As cópias
  * vão para `backups/` ao lado do arquivo do banco, salvo indicação em
  * contrário, e `SALAO_BACKUP=0` desliga para quem realmente quiser.
@@ -147,7 +154,44 @@ function montarArmazenamento(): {
     };
 }
 
-const registrador = criarRegistradorJson({ contexto: { servico: "gestao-filas-e-reservas" } });
+/**
+ * Para onde o log vai.
+ *
+ * Sempre para o stdout, que é onde se vê ao rodar na mão. Com
+ * `SALAO_LOG_ARQUIVO`, também para um arquivo com rodízio — sem isso, rodando
+ * como tarefa do Agendador o log se perde inteiro, e não há o que olhar quando
+ * a casa liga dizendo que algo deu errado no sábado à noite.
+ *
+ * Nome e telefone já saem mascarados de quem os escreve, então o arquivo nasce
+ * sem dado pessoal e pode ser mandado para quem dá suporte como está.
+ */
+function escritorDoLog(): ((linha: string, nivel: Nivel) => void) | undefined {
+    const caminho = process.env["SALAO_LOG_ARQUIVO"];
+    if (caminho === undefined || caminho.trim() === "") {
+        return undefined;
+    }
+
+    const paraArquivo = criarEscritorDeArquivo({ caminho: caminho.trim() });
+    return (linha, nivel) => {
+        if (nivel === "erro") {
+            process.stderr.write(`${linha}
+`);
+        } else {
+            process.stdout.write(`${linha}
+`);
+        }
+        paraArquivo(linha, nivel);
+    };
+}
+
+// Uma vez só: cada escritor tem o próprio contador de tamanho, e dois deles
+// fariam o rodízio acontecer na hora errada.
+const escrever = escritorDoLog();
+
+const registrador = criarRegistradorJson({
+    contexto: { servico: "gestao-filas-e-reservas" },
+    ...(escrever === undefined ? {} : { escrever })
+});
 
 /**
  * O aviso a quem sai da fila vai para o log. Para mandar mensagem de verdade,
@@ -162,13 +206,13 @@ function montarNotificador(): Notificador {
  * "Sistema online": o pulso que diz que esta casa está funcionando.
  *
  * Desligado sem `SALAO_PULSO_URL`. Aponte para um serviço que alerte quando o
- * sinal **para** de chegar — é o silêncio que interessa, não a mensagem.
+ * sinal para de chegar — é o silêncio que interessa, não a mensagem.
  *
  * Vai junto a saúde do backup, porque as duas perguntas que se faz de longe são
  * "a casa está de pé?" e "a casa está copiando o banco?". Um salão no ar que
  * parou de copiar há três dias responde igualzinho a um saudável.
  *
- * **Contagens e horários, nada mais.** Nome e telefone de quem jantou aqui não
+ * Contagens e horários, nada mais. Nome e telefone de quem jantou aqui não
  * saem da casa: quem recebe o pulso é um terceiro.
  */
 function montarPulso(estadoDoBackup: () => EstadoDoBackup | null): RotinaDePulso | null {
@@ -203,7 +247,7 @@ function montarPulso(estadoDoBackup: () => EstadoDoBackup | null): RotinaDePulso
 /**
  * Expurgo do dado pessoal antigo (LGPD).
  *
- * O diário é o registro do que aconteceu, **não um cadastro de clientes**.
+ * O diário é o registro do que aconteceu, não um cadastro de clientes.
  * Passado o tempo em que o nome serve para alguma coisa — conferir uma
  * reclamação, entender uma noite —, ele vira dado pessoal guardado sem motivo,
  * e a casa responde por isso.
@@ -312,7 +356,7 @@ function iniciar(): void {
             // Uma última cópia antes de fechar, quando dá: num encerramento
             // gracioso ela é a mais recente que existe.
             //
-            // **No Windows quase nunca dá.** Parar a tarefa no Agendador, ou
+            // No Windows quase nunca dá. Parar a tarefa no Agendador, ou
             // qualquer supervisor, encerra o processo sem entregar sinal
             // nenhum — medido: SIGTERM e SIGINT matam sem passar por aqui, e
             // SIGBREAK e SIGHUP nem matam. Então esta cópia é um bônus do

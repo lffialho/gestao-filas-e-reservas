@@ -12,9 +12,9 @@ export interface AvisoDeMesaPronta {
  *
  * Duas regras de quem chama:
  *
- * - avise **depois** da transação confirmar. Avisar dentro dela mandaria
+ * - avise depois da transação confirmar. Avisar dentro dela mandaria
  *   mensagem sobre uma mesa que o rollback ainda pode desfazer;
- * - falha de aviso **não** desfaz a alocação. A mesa já é daquele cliente;
+ * - falha de aviso não desfaz a alocação. A mesa já é daquele cliente;
  *   o certo é registrar a falha e seguir, não cancelar o atendimento porque
  *   o provedor de SMS caiu.
  */

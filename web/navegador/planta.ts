@@ -106,7 +106,7 @@ function lugarPedido(mesa: InfoMesa): Lugar | null {
 /**
  * Onde cada mesa fica na tela.
  *
- * A posição do domínio é **um ladrilho**: o canto superior esquerdo. O vão de
+ * A posição do domínio é um ladrilho: o canto superior esquerdo. O vão de
  * vários ladrilhos é invenção desta tela, e daí vem o único caso interessante —
  * duas mesas a um ladrilho de distância são perfeitamente legais no domínio e
  * se cobririam aqui. Quando isso acontece, a de número menor fica onde está e a

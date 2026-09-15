@@ -30,3 +30,7 @@ npm-debug.log*
 # Sistema operacional
 .DS_Store
 Thumbs.db
+suporte-*.txt
+
+# Log do servico
+salao.log*

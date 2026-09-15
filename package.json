@@ -22,6 +22,7 @@
     "start:env": "node --env-file=.env dist/main.js",
     "tudo": "node ferramentas/subir.mjs",
     "conferir:instalacao": "node ferramentas/conferir-instalacao.mjs",
+    "suporte": "node ferramentas/pacote-de-suporte.mjs",
     "tudo:env": "node --env-file=.env ferramentas/subir.mjs",
     "demo": "node dist/demo.js",
     "web:build": "tsc -p web/tsconfig.servidor.json && tsc -p web/tsconfig.navegador.json",

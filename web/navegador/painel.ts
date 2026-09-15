@@ -21,7 +21,7 @@ import { dataPorExtenso, duracao, fimDoDia, horaMinuto, inicioDoDia } from "./te
 /**
  * O painel do maître.
  *
- * A regra que organiza este arquivo inteiro é o **desenho por região**. A tela
+ * A regra que organiza este arquivo inteiro é o desenho por região. A tela
  * se atualiza sozinha a cada poucos segundos, e o que a atualização substitui é
  * só o que veio do serviço: a planta, os números, o diário e a fila. A caixa de
  * busca e a janela de ação ficam de fora, e ficam de fora de propósito — um

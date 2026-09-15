@@ -340,8 +340,7 @@ export class RepositorioDoSalaoSqlite implements RepositorioDoSalao {
     }
 
     /**
-     * Grava uma cópia consistente do banco em outro arquivo, **com o serviço
-     * de pé**.
+     * Grava uma cópia consistente do banco em outro arquivo, com o serviço de pé.
      *
      * `VACUUM INTO` é a forma que o próprio SQLite dá para isso: a cópia sai
      * de uma leitura transacional, então nunca contém metade de uma operação,

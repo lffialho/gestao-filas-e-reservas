@@ -4,11 +4,11 @@
  * Duas escolhas que decidem se o arquivo abre certo ou vira uma coluna só de
  * texto embaralhado:
  *
- * - **Ponto e vírgula**, não vírgula. No Windows em pt-BR o separador de lista
+ * - Ponto e vírgula, não vírgula. No Windows em pt-BR o separador de lista
  *   é `;`, e um arquivo com vírgula cai todo na primeira coluna. Quem lê o
  *   arquivo com outra ferramenta escolhe o separador; quem lê com dois cliques
  *   no Excel, não.
- * - **BOM** no começo. Sem ele o Excel lê UTF-8 como Latin-1 e "Família Costa"
+ * - BOM no começo. Sem ele o Excel lê UTF-8 como Latin-1 e "Família Costa"
  *   vira "FamÃ­lia Costa".
  *
  * Nada disso é bonito. É o que faz o arquivo servir para quem vai abri-lo.

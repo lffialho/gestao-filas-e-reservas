@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
  * Sobe o serviço e o painel juntos, num terminal só.
  *
  * Existe porque "abra dois terminais e rode um comando em cada" não é
- * instrução que se dê a quem toca um restaurante. Ele também **levanta de novo
- * o que cair**: se um dos dois morrer sozinho — exceção não prevista, falta de
+ * instrução que se dê a quem toca um restaurante. Ele também levanta de novo
+ * o que cair: se um dos dois morrer sozinho — exceção não prevista, falta de
  * memória, o que for —, sobe outro em segundos, em vez de o salão descobrir no
  * meio do movimento que o painel não responde mais.
  *
@@ -132,7 +132,7 @@ function encerrar(motivo) {
 
     for (const filho of vivos) {
         // SIGTERM: no Linux e no macOS os dois fecham banco e conexões ao
-        // receber. **No Windows não** — medido: o processo morre na hora, sem
+        // receber. No Windows não — medido: o processo morre na hora, sem
         // passar pelo encerramento. Não é perda: o SQLite roda em WAL e aguenta
         // morte súbita; o que se perde é a cópia de despedida do banco, e por
         // isso quem garante backup é a cópia periódica, não esta linha.

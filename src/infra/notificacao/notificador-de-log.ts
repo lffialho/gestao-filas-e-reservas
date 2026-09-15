@@ -1,4 +1,5 @@
 import type { Registrador } from "../../compartilhado/log/registrador.js";
+import { mascararNome, mascararTelefone } from "../../compartilhado/log/mascarar.js";
 import type { AvisoDeMesaPronta, Notificador } from "../../dominio/portas/notificador.js";
 
 /**
@@ -16,9 +17,12 @@ export class NotificadorDeLog implements Notificador {
     }
 
     async mesaPronta(aviso: AvisoDeMesaPronta): Promise<void> {
+        // Mascarado porque o log vai para quem dá suporte, que é um terceiro
+        // em relação a quem jantou aqui. Quem precisa do nome inteiro para
+        // chamar o cliente é o maître, e ele olha o painel, não o log.
         this.#registrador.info("aviso_mesa_pronta", {
-            cliente: aviso.nome,
-            telefone: aviso.telefone,
+            cliente: mascararNome(aviso.nome),
+            telefone: mascararTelefone(aviso.telefone),
             mesaId: aviso.mesaId,
             mesaNumero: aviso.mesaNumero
         });

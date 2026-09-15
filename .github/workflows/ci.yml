@@ -45,6 +45,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build do painel
+        run: npm run web:build
+
       # Prova que o serviço sobe de verdade e responde, não só que compila.
       - name: Fumaça — servidor responde e exige token
         run: |
@@ -80,3 +83,26 @@ jobs:
             exit 1
           fi
           echo "recusou subir sem token, como esperado"
+
+      - name: Fumaça — painel exige senha antes de servir qualquer coisa
+        run: |
+          SALAO_TOKEN=token-de-ci PORTA_WEB=5173             PAINEL_SENHA_ARQUIVO="$RUNNER_TEMP/painel-senha.json"             node web/dist/servidor.js &
+          PAINEL=$!
+          for tentativa in $(seq 1 20); do
+            if curl -s -o /dev/null http://127.0.0.1:5173/entrar; then break; fi
+            sleep 0.5
+          done
+
+          echo "sem senha criada, a raiz manda criar uma (303):"
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5173/)
+          test "$codigo" = "303" || { echo "esperava 303, recebi $codigo"; kill $PAINEL; exit 1; }
+
+          echo "nem os estáticos saem antes disso (303):"
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5173/estilo.css)
+          test "$codigo" = "303" || { echo "esperava 303, recebi $codigo"; kill $PAINEL; exit 1; }
+
+          echo "/api responde 401 em JSON, para o painel saber pedir a senha:"
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5173/api/salao)
+          test "$codigo" = "401" || { echo "esperava 401, recebi $codigo"; kill $PAINEL; exit 1; }
+
+          kill $PAINEL

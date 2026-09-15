@@ -7,7 +7,7 @@ import { contagem, duracao, segundosDesde } from "./tempo.js";
  * poucos segundos, e contagem regressiva que só anda quando a rede responde
  * fica tremendo à vista de quem opera. Então quem desenha só marca o elemento
  * com `data-relogio` e `data-desde`, e daqui de segundo em segundo se reescreve
- * **apenas o texto** — nenhum nó é criado, nenhum é destruído, e nada perde
+ * apenas o texto — nenhum nó é criado, nenhum é destruído, e nada perde
  * foco por causa de um relógio.
  */
 

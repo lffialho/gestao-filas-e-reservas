@@ -83,7 +83,7 @@ export function inicioDoDia(instante: Date = new Date()): Date {
  * O começo do dia de uma data escrita "AAAA-MM-DD" — o formato que o
  * `<input type="date">` entrega — lida no fuso do salão.
  *
- * Passar essa string direto para `new Date()` a leria como meia-noite **UTC**,
+ * Passar essa string direto para `new Date()` a leria como meia-noite UTC,
  * que em São Paulo é 21h do dia anterior: o fechamento de um dia sairia com as
  * três últimas horas da véspera e sem as três últimas dele mesmo.
  *

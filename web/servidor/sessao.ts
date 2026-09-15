@@ -3,8 +3,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 /**
  * Sessão do painel.
  *
- * O painel guarda o `SALAO_TOKEN` e o injeta nas chamadas, então **quem alcança
- * o painel manda no salão** sem precisar de token nenhum. Como ele escuta na
+ * O painel guarda o `SALAO_TOKEN` e o injeta nas chamadas, então quem alcança
+ * o painel manda no salão sem precisar de token nenhum. Como ele escuta na
  * rede — é essa a razão de existir, o tablet do balcão —, sem senha qualquer um
  * no wifi do restaurante senta gente, libera mesa e fecha o dia.
  *

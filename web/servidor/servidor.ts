@@ -32,14 +32,14 @@ import {
  * Servidor do painel. Faz três coisas, e só elas.
  *
  * Serve os arquivos de `publico/`, repassa `/api/...` para a API do salão
- * **pondo o token aqui**, e exige uma senha antes de qualquer uma das duas.
+ * pondo o token aqui, e exige uma senha antes de qualquer uma das duas.
  *
  * O token ficar deste lado é a razão de o front ter um processo próprio:
  * `SALAO_TOKEN` é segredo único da equipe, e em JavaScript de navegador
  * qualquer um que abra o devtools libera todas as mesas do salão.
  *
  * Mas esconder o token do navegador cria a outra ponta do problema: como é o
- * painel que carrega a credencial, **quem alcança o painel manda no salão** sem
+ * painel que carrega a credencial, quem alcança o painel manda no salão sem
  * precisar de token. E o painel escuta na rede de propósito — é assim que o
  * tablet do balcão o abre. Sem senha, qualquer um no wifi do restaurante senta
  * gente e fecha o dia. Daí a sessão: ver `sessao.ts`.
@@ -471,7 +471,7 @@ function portaoSemSenhaAinda(
  * que ela pediu?", e juntá-las passava do limite de complexidade do Biome.
  *
  * A credencial é lida do disco a cada pedido. A um punhado de leituras por
- * segundo, que é o que um painel faz, o custo é irrelevante — e em troca
+ * segundo, como faz um painel, o custo é irrelevante — e em troca
  * trocar a senha vale na hora, e apagar o arquivo devolve o painel à primeira
  * abertura sem precisar reiniciar nada.
  */
